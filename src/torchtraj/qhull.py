@@ -1,7 +1,7 @@
 import torch
-import named
+from . import named
 
-from utils import PROJ, XY
+from .utils import PROJ, XY
 
 
 

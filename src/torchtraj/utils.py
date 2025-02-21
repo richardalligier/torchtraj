@@ -1,12 +1,7 @@
 from collections import namedtuple
-import named
+#import .named
 
 WPTS ="wpts"
 T = "t"
 PROJ = "proj"
 XY = "xy"
-
-
-
-
-

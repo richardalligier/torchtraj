@@ -3,9 +3,9 @@ __all__ = ["generate"]
 import torch
 import sys
 
-import named
-from utils import WPTS,T,XY
-from flights import vheading
+from . import named
+from .utils import WPTS,T,XY
+from .flights import vheading
 
 
 # THETA = "theta"

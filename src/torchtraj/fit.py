@@ -2,10 +2,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import time
 import torch
-from utils import WPTS, T, XY
-from flights import Flights,FlightsWithAcc
+from .utils import WPTS, T, XY
+from .flights import Flights,FlightsWithAcc
 import numpy as np
-from traj import CannotTurnError
+from .traj import CannotTurnError
 # df = pd.read_parquet("AA39115843.parquet")
 # print(list(df))
 
@@ -19,6 +19,8 @@ class Scaler:
         # Sortie: fmodel scale, traj scale, t scale
         namesbatch = tuple()
         names = namesbatch + (WPTS,)
+        assert(trajreal.names[-1]==XY)
+#        trajreal = trajreal.align_to(...,XY)
         # print(trajreal.names)
         # assert(len(trajreal.shape)==2)
         xmin , xmax = trajreal[...,0].min().item(),trajreal[...,0].max().item()
@@ -71,9 +73,9 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
     #     initial_duration = dnoname["duration"].clone()
     for x in dnoname.values():
         x.requires_grad=True
-    lr = 1e-4
+    lr = 1e-6
     optimizer = torch.optim.Adam([
-        {'params':dnoname['duration'],'lr':lr},
+        {'params':dnoname['duration'],'lr':lr*1e3},
         {'params':dnoname['v'],'lr':lr * 1e2},# * 1e2},
         {'params':dnoname['theta'],'lr':lr * 1e2},
         {'params':dnoname['turn_rate'],'lr':lr*1e3},
@@ -104,7 +106,7 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
         # dres["turn_rate"] = torch.clip(dres["turn_rate"],min=minturn_rate*scaler.tmax)
         # print((dres["turn_rate"]/scaler.tmax).min())
         # print(dres["v"].min())# = torch.abs(dres["v"])
-        f = FlightsWithAcc(**dres)
+        f = Flights(**dres)
         # newok = dres["turn_rate"].rename(None)/scaler.tmax
         newok = minturn_rate
         try:
@@ -142,12 +144,12 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
         if losslowest is None or losslowest>loss.item():
             memlowest={k:v.clone().detach() for k,v in dres.items()}
             losslowest=loss.item()
-        # print(loss.item(),losslowest)
+        print(loss.item(),losslowest)
         loss.backward()
         optimizer.step()
         scheduler.step(loss.item())
     # print("unscaledlosslowest",losslowest/scaler.fs**2)
-    f = FlightsWithAcc(**memlowest)
+    f = Flights(**memlowest)
     f = f.dmap(f,lambda v:v.detach())
     return f
 
@@ -157,8 +159,8 @@ def fit(fmodel_noscale,trajreal_noscale,tmodel,gen,niter,minturn_rate=None,cst_d
     # Sortie : f opti unscale
     scaler = Scaler()
     (fmodel,trajreal,t)  = scaler.scale(fmodel_noscale,trajreal_noscale,tmodel)
-    if minturn_rate == None:
-        minturn_rate = 1e-3*torch.ones_like(fmodel_noscale.turn_rate).rename(None)
+    if minturn_rate is None:
+        minturn_rate = 1e-10*torch.ones_like(fmodel_noscale.turn_rate).rename(None)
     minturn_rate = minturn_rate*scaler.tmax#*torch.ones_like(fmodel_noscale.turn_rate).rename(None)
     d = {"xy0":fmodel.xy0}
     dopti = { "duration":fmodel.duration,"v":fmodel.v,"theta":fmodel.theta,"turn_rate":fmodel.turn_rate,}
@@ -174,7 +176,7 @@ def fit(fmodel_noscale,trajreal_noscale,tmodel,gen,niter,minturn_rate=None,cst_d
     return scaler.unscale(f)#scaler.unscale(f)#f#.dmap(f,lambda v:v.detach().cpu())
 
 def main():
-    import traj
+    from . import traj
     torch.random.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     freal = randomfpl(device,1)

@@ -1,5 +1,5 @@
-import named
-from utils import WPTS, XY
+from . import named
+from .utils import WPTS, XY
 import pandas as pd
 import torch
 import numpy as np
@@ -33,6 +33,7 @@ def cat_lflights(lflights,dim=0):
 class Flights:
     ncoords = 2
     def __init__(self,xy0,v,theta,duration,turn_rate):
+        assert(v.min()>0)
         self.xy0 = xy0
         self.v = v
         self.theta = theta

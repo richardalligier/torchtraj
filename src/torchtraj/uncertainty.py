@@ -1,7 +1,7 @@
 import torch
-import named
-from utils import WPTS, T, XY
-from flights import vheading,repeat_on_new_axis
+from . import named
+from .utils import WPTS, T, XY
+from .flights import vheading,repeat_on_new_axis
 import itertools
 import matplotlib.pyplot as plt
 

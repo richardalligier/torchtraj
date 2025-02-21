@@ -5,12 +5,11 @@ import datetime
 from os import listdir
 from os.path import isfile, join
 
-from utils import WPTS, T, XY
-from flights import FlightsWithAcc
+from .utils import WPTS, T, XY
+from .flights import FlightsWithAcc
 import torch
-import fit
+from . import fit, traj
 import numpy as np
-import traj
 import math
 import pytz
 
