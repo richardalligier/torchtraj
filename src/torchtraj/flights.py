@@ -61,9 +61,14 @@ class Flights:
         # print("endchecknames")
         # assert(f.theta.names == f.duration.names)
         # assert(f.turn_rate.names==f.duration.names)
-
+    @classmethod
+    def reparametrize(cls,xy0,v,theta,duration,turn_rate):
+        return cls(xy0,v,theta,duration,turn_rate)
+    @classmethod
+    def _meanv(cls,v):
+        return v
     def meanv(self):
-        return self.v
+        return self._meanv(self.v)
     def nwpts(self):
         return self.duration.shape[-1]
     def total_duration(self):
@@ -129,10 +134,11 @@ class Flights:
     def from_argsdict(cls,d):
         return cls(**d)
     @classmethod
-    def from_wpts(cls,xy0,meanv,v,turn_rate,wpts):
+    def from_wpts(cls,xy0,v,turn_rate,wpts):
         # print(xy0.names,wpts.names)
         assert(wpts.names[-1]==XY)
         assert(wpts.names[-2]==WPTS)
+        meanv = cls._meanv(v)
         xy0w = xy0.align_as(wpts)
         # print(wpts.shape,xy0w.shape)
         # print(xy0w.expand(wpts.shape).shape)
@@ -159,11 +165,17 @@ class FlightsWithAcc(Flights):
     #     assert(self.v.names[-1]==WPTS)
     #     v = named.pad(self.v,(0,1),'replicate')
     #     return (v[...,:-1] + v[...,1:]) * 0.5
-    def meanv(self):
-        assert(self.v.names[-1]==WPTS)
-        meanv = (self.v[...,:-1] + self.v[...,1:]) * 0.5
-        meanv = torch.cat((meanv,self.v[...,-1:]),axis=-1)
+    @classmethod
+    def _meanv(cls,v):
+        assert(v.names[-1]==WPTS)
+        meanv = (v[...,:-1] + v[...,1:]) * 0.5
+        meanv = torch.cat((meanv,v[...,-1:]),axis=-1)
         return meanv
+    # def meanv(self):
+    #     assert(self.v.names[-1]==WPTS)
+    #     meanv = (self.v[...,:-1] + self.v[...,1:]) * 0.5
+    #     meanv = torch.cat((meanv,self.v[...,-1:]),axis=-1)
+    #     return meanv
     def speed_at_turns(self):
         return self.v[...,1:]
     def segdist(self,clipped_t,duration):
