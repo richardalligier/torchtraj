@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import time
 import torch
 from .utils import WPTS, T, XY
-from .flights import Flights,FlightsWithAcc
+#from .flights import Flights,FlightsWithAcc
 import numpy as np
 from .traj import CannotTurnError
 # df = pd.read_parquet("AA39115843.parquet")
@@ -34,7 +34,7 @@ class Scaler:
         #print(fs,xymin,((trajreal - xymin) * fs)[...,0].min(),((trajreal - xymin) * fs)[...,0].max(),((trajreal - xymin) * fs)[...,1].min(),((trajreal - xymin) * fs)[...,1].max())
         #raise Exception
         tmax = torch.max(t)
-        new_fmodel = FlightsWithAcc((fmodel.xy0  - xymin) * fs,fmodel.v  * fs* tmax,fmodel.theta,fmodel.duration / tmax,fmodel.turn_rate*tmax)
+        new_fmodel = fmodel.new((fmodel.xy0  - xymin) * fs,fmodel.v  * fs* tmax,fmodel.theta,fmodel.duration / tmax,fmodel.turn_rate*tmax)
         new_trajreal = (trajreal - xymin) * fs
         self.fs = fs
         self.xymin = xymin
@@ -42,7 +42,7 @@ class Scaler:
         return (new_fmodel,new_trajreal, t / tmax)
 
     def unscale(self,fmodel):
-        new_fmodel = FlightsWithAcc(fmodel.xy0 / self.fs + self.xymin,fmodel.v / self.fs / self.tmax,fmodel.theta,fmodel.duration * self.tmax ,fmodel.turn_rate / self.tmax)
+        new_fmodel = fmodel.new(fmodel.xy0 / self.fs + self.xymin,fmodel.v / self.fs / self.tmax,fmodel.theta,fmodel.duration * self.tmax ,fmodel.turn_rate / self.tmax)
         return new_fmodel
 
 
@@ -73,12 +73,12 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
     #     initial_duration = dnoname["duration"].clone()
     for x in dnoname.values():
         x.requires_grad=True
-    lr = 1e-6
+    lr = 1e-3
     optimizer = torch.optim.Adam([
-        {'params':dnoname['duration'],'lr':lr*1e3},
-        {'params':dnoname['v'],'lr':lr * 1e2},# * 1e2},
-        {'params':dnoname['theta'],'lr':lr * 1e2},
-        {'params':dnoname['turn_rate'],'lr':lr*1e3},
+        {'params':dnoname['duration'],'lr':lr},
+        {'params':dnoname['v'],'lr':lr},
+        {'params':dnoname['theta'],'lr':lr},
+        {'params':dnoname['turn_rate'],'lr':lr},
     ],lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True,patience=1000,factor=0.9)
     memlowest = None
@@ -106,7 +106,7 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
         # dres["turn_rate"] = torch.clip(dres["turn_rate"],min=minturn_rate*scaler.tmax)
         # print((dres["turn_rate"]/scaler.tmax).min())
         # print(dres["v"].min())# = torch.abs(dres["v"])
-        f = Flights(**dres)
+        f = fmodel.new(**dres)
         # newok = dres["turn_rate"].rename(None)/scaler.tmax
         newok = minturn_rate
         try:
@@ -136,7 +136,7 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
         direrr = nbtrajs*((direction(out)-direction(trajreal))**2).mean()
         # print(out.names)
         # print(trajreal.names)
-        poserr = nbtrajs*((out-trajreal)**2).rename(None).mean()
+        poserr = ((out-trajreal)**2).rename(None).mean()*nbtrajs
         loss = poserr#*(1+100.*direrr)
         assert(not torch.isnan(loss).any())
         # raise Exception
@@ -149,7 +149,7 @@ def scaled_fit(fmodel,trajreal,tmodel,gen,niter,minturn_rate,cst_duration,initia
         optimizer.step()
         scheduler.step(loss.item())
     # print("unscaledlosslowest",losslowest/scaler.fs**2)
-    f = Flights(**memlowest)
+    f = fmodel.new(**memlowest)
     f = f.dmap(f,lambda v:v.detach())
     return f
 

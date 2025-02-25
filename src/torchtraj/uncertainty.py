@@ -33,7 +33,7 @@ def applydxy(f,paramnames,dxy):
     #     plt.scatter(wpts[i,0,:,0].cpu(),wpts[i,0,:,1].cpu())
     # plt.axis('equal')
     # plt.show()
-    dparams = {"xy0":f.xy0, "meanv":f.meanv(), "v":f.v, "turn_rate":f.turn_rate}
+    dparams = {"xy0":f.xy0,  "v":f.v, "turn_rate":f.turn_rate}
     dparams = {k:x.align_to(*processnames(paramnames,x.names)) for k,x in dparams.items()}
     dparams["wpts"]=wpts
     # newf = f.from_wpts(**dparams)
@@ -154,6 +154,76 @@ def addangle(dtheta,whichwpts,whichtomove,f):
     assert(dxy.names[-2]==WPTS)
     dxy = zero_pad(dxy[...,whichwpts:whichwpts+1,:],whichtomove,f.nwpts())
     # raise Exception
+    dparams=applydxy(f, dtheta.names, dxy)
+    return f.from_wpts(**dparams)
+
+
+
+def gather_wpts(t,iwpts):
+    assert(WPTS not in iwpts.names)
+    assert(WPTS in t.names)
+    for x in iwpts.names:
+        assert(x in t.names)
+    gathered_t = named.gather(t,WPTS,iwpts.align_to(*(iwpts.names+(WPTS,))))
+    return gathered_t.align_to(*t.names).align_to(...,WPTS).squeeze(-1)
+
+
+def check_same(a,b):
+    assert(b.shape==a.shape)
+    assert(b.names==a.names)
+
+def addanglebatch(dtheta,wpts_start,wpts_turn,wpts_rejoin,f):
+    assert(f.theta.names[-1]==WPTS)
+    check_same(dtheta,wpts_start)
+    check_same(dtheta,wpts_turn)
+    check_same(dtheta,wpts_rejoin)
+    assert(WPTS not in dtheta.names)
+    newnames = processnames(dtheta.names,f.theta.names)
+    assert(newnames[-1]==WPTS)
+    # print(f.theta.rename(None)[...,wpts_turn.rename(None)])
+    # print(f.theta.names[:-1])
+    # print(f.theta)
+    wpts_turn = wpts_turn -1
+    wpts_rejoin = wpts_rejoin -1
+    wpts_start = wpts_start -1
+    print(wpts_turn)
+    newf = addangle_no_rejoin(dtheta,wpts_start,wpts_rejoin,f)
+    # return newf
+    # raise Exception
+    #oldtheta = named.gather(f.theta,WPTS,wpts_turn.align_to(*(wpts_turn.names+(WPTS,))))
+
+    def compute_theta_turn_rejoin(f1,f2):
+        turn = gather_wpts(f1.compute_wpts(),wpts_turn)
+        print(wpts_turn)
+        print(f1.compute_wpts())
+        print(turn)
+        rejoin = gather_wpts(f2.compute_wpts(),wpts_rejoin)
+        diff = rejoin-turn
+        return torch.atan2(diff[...,1],diff[...,0])
+    oldtheta = compute_theta_turn_rejoin(f,f) + dtheta
+    newtheta = compute_theta_turn_rejoin(newf,newf)
+    # newf = addangle_no_rejoin(dtheta,wpts_start,wpts_rejoin,f)
+    # print(newtheta)
+    # print(oldtheta)
+    # print(newtheta-oldtheta)
+    return addangle_no_rejoin(newtheta-oldtheta,wpts_turn,wpts_rejoin,newf)
+
+def addangle_no_rejoin(dtheta,wpts_start,wpts_turn,f):
+    assert(f.theta.names[-1]==WPTS)
+    check_same(dtheta,wpts_start)
+    check_same(dtheta,wpts_turn)
+    # print(f"{dtheta=}")
+    newnames = processnames(dtheta.names,f.theta.names)
+    newtheta = f.theta.align_to(*newnames) + dtheta.align_to(*newnames)
+    newvheading = vheading(newtheta)
+    dxytheta = newvheading - vheading(f.theta).align_as(newvheading)
+    newnames = processnames(dtheta.names,dxytheta.names)
+    dxy = dxytheta.align_to(*newnames) * f.meanv().align_to(*newnames) * f.duration.align_to(*newnames)
+    assert(dxy.names[-2]==WPTS)
+    dxy[...,:wpts_start+1,:]=0
+    dxy = torch.cumsum(dxy,axis=-2)
+    dxy[...,wpts_turn:,:]=0
+    print(f"{dxy=}")
     dparams=applydxy(f, dtheta.names, dxy)
     return f.from_wpts(**dparams)
 

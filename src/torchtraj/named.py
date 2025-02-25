@@ -2,8 +2,21 @@ import torch
 
 
 
+def broadcastshapes(s1,s2):
+    m = min(len(s1),len(s2))
+    res = s1[:-m]+s2[:-m]
+    s1 = s1[-m:]
+    s2 = s2[-m:]
+    print(res,s1,s2)
+    for a,b in zip(s1,s2):
+        assert(a==b or a==1 or b==1)
+        res += (max(a,b),)
+    return res
+
 def mergenames(n1, n2):
-    n1
+    assert(None not in n1)
+    assert(None not in n2)
+    return tuple(set(n1).union(set(n2)))
 
 
 def align(x,y,names):
@@ -12,6 +25,26 @@ def align(x,y,names):
 def namestoints(t,whichnames):
     return tuple(t.names.index(n) for n in whichnames)
 
+
+def gather(input,dimname,index):
+    assert(dimname in input.names)
+    assert(dimname in index.names)
+    newnames = mergenames(input.names,index.names)
+    inp = input.align_to(*newnames).rename(None)
+    ind = index.align_to(*newnames).rename(None)
+    bshape = list(broadcastshapes(inp.shape,ind.shape))
+    i = newnames.index(dimname)
+    inp = inp.broadcast_to(bshape)
+    bshape[i]=ind.shape[i]
+    ind = ind.broadcast_to(bshape)
+    # print(index)
+    # print(input)
+    # print()
+    # raise Exception
+    # print(i)
+    # print(ind)
+    # print(newnames)
+    return torch.gather(inp,i,ind).rename(*newnames)
 
 def amax(t, dim:tuple[str]):
     names = t.names
@@ -67,3 +100,9 @@ def cat(t,dim=0):
     for ti in t:
         assert(ti.names==names)
     return torch.cat([ti.rename(None) for ti in t],dim=dim).rename(*names)
+
+
+def flip(t,dims):
+    names = t.names
+    indices = [names.index(s) for s in dims]
+    return torch.flip(t.rename(None),indices).rename(*names)

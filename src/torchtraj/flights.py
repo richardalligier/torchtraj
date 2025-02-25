@@ -62,7 +62,7 @@ class Flights:
         # assert(f.theta.names == f.duration.names)
         # assert(f.turn_rate.names==f.duration.names)
     @classmethod
-    def reparametrize(cls,xy0,v,theta,duration,turn_rate):
+    def new(cls,xy0,v,theta,duration,turn_rate):
         return cls(xy0,v,theta,duration,turn_rate)
     @classmethod
     def _meanv(cls,v):
@@ -122,6 +122,9 @@ class Flights:
     @classmethod
     def cpu(cls, flights):
         return cls(**{k:v.cpu() for k,v in flights.dictparams().items()})
+    @classmethod
+    def clone(cls, flights):
+        return cls(**{k:v.clone() for k,v in flights.dictparams().items()})
     def to(self,device=None,dtype=None):
         return self.dmap(self,f=lambda v:v.to(device=device,dtype=dtype))
     @classmethod
@@ -182,5 +185,6 @@ class FlightsWithAcc(Flights):
         # print(self.v.names, duration.names)
         acc = named.pad(torch.diff(self.v,axis=-1),(0,1),'constant',0)/duration.align_as(self.v)
         return clipped_t * (self.v.align_as(clipped_t) + acc.align_as(clipped_t) * 0.5 * clipped_t)
-
+    # @classmethod
+    # def from_Flights(self,f):
 
