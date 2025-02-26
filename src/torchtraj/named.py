@@ -13,14 +13,28 @@ def broadcastshapes(s1,s2):
         res += (max(a,b),)
     return res
 
-def mergenames(n1, n2):
-    assert(None not in n1)
-    assert(None not in n2)
-    return tuple(set(n1).union(set(n2)))
+
+
+def mergenames(args):
+    for x in args:
+        assert(None not in x)
+    res = set()
+    for x in args:
+        res = res.union(x)
+    return tuple(sorted(res))
+
+# def mergenames(n1, n2):
+#     assert(None not in n1)
+#     assert(None not in n2)
+#     return tuple(set(n1).union(set(n2)))
 
 
 def align(x,y,names):
     return x.align_to(*names),y.align_to(*names)
+
+def align_common(*args):
+    names = mergenames([x.names for x in args])
+    return tuple(x.align_to(*names) for x in args)
 
 def namestoints(t,whichnames):
     return tuple(t.names.index(n) for n in whichnames)
@@ -29,7 +43,8 @@ def namestoints(t,whichnames):
 def gather(input,dimname,index):
     assert(dimname in input.names)
     assert(dimname in index.names)
-    newnames = mergenames(input.names,index.names)
+    newnames = mergenames((input.names,index.names))
+    print(f"{newnames=}")
     inp = input.align_to(*newnames).rename(None)
     ind = index.align_to(*newnames).rename(None)
     bshape = list(broadcastshapes(inp.shape,ind.shape))
