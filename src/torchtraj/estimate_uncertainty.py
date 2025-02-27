@@ -1,6 +1,7 @@
 from torchtraj.utils import WPTS, XY,T
 from torchtraj.flights import Flights, FlightsWithAcc
-from torchtraj.uncertainty import PARAMS, DT0, DT1, DANGLE, DSPEED, adddt, addangle, changespeed, addlongitudinaldspeed
+from torchtraj.uncertainty import PARAMS, DT0, DT1, DANGLE, DSPEED, adddt, addangle,  addlongitudinaldspeed
+from torchtraj.uncertainty import changespeed_old as changespeed
 import torch
 # from torchtraj.qhull import QhullDist
 from torchtraj import uncertainty, named, traj

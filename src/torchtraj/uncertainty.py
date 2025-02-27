@@ -46,14 +46,17 @@ def processnames(dtnames,xnames):
 
 # zero_pad on [:wps_start+1] and [wps_end:]
 def zero_pad(dxy,wpts_start,wpts_end):
+    iwpts = dxy.names.index(WPTS)
     bshape = named.broadcastshapes(dxy.shape,wpts_start.align_as(dxy).shape)
     bshape = named.broadcastshapes(bshape,wpts_end.align_as(dxy).shape)
     # print(bshape)
     # raise Exception
+    print(iwpts,dxy.shape)
+    assert(dxy.shape[iwpts]>1)
     dxy = dxy.broadcast_to(bshape).clone()
     # dxy = dxy.clone()
-    iwpts = dxy.names.index(WPTS)
     nwpts = dxy.shape[iwpts]
+
     i = torch.arange(nwpts,device=dxy.device).rename(WPTS)#.align_as(dxy)
     # print(i.names,i.shape)
     # print(wpts_start.names,wpts_start.shape)
@@ -114,11 +117,12 @@ def adddt(dt,wpts_start,wpts_end,f):
 
 def changespeed(dspeed,wpts_start,wpts_end,f):
     '''
-    wpts_start>0
-    wpts_start-1 unchanged
-    wpts_start is the shifted wpts
-    wpts_end is the last wpts to be shifted
-    wpts_end+1 unchanged
+    wpts_start unchanged
+    wpts_start+1 is the shifted due to speed
+    wpts_turn is the shifted due to speed
+    points between wpts_turn excluded to wpts_end excluded are only "rotated"
+    wpts_end unchanged
+    speed on segments between wpts_start tp wpts_end is changed
     '''
     assert(f.v.names[-1] == WPTS)
     argstocheck = (dspeed,wpts_start,wpts_end)
@@ -132,14 +136,91 @@ def changespeed(dspeed,wpts_start,wpts_end,f):
     newmeanv = (dspeed.align_as(velocity)-1)*velocity
     dxy = newmeanv * f.duration.align_as(newmeanv)
     assert(dxy.names[-2] == WPTS)
-    dxy = zero_pad(dxy,wpts_start-1,wpts_start+1)
+    print(f"{dxy.names=} {dxy.shape=}")
+    print(dxy)
+    dxy = zero_pad(dxy,wpts_start-1,wpts_end)
     dxy = torch.cumsum(dxy,axis=-2)
     dxy = zero_pad(dxy,wpts_start-1,wpts_end)
-    dspeed = zero_pad(dspeed.align_to(*basename,WPTS),wpts_start-1,wpts_end)
+    print(dxy)
+    # raise Exception
+    # dspeed = dspeed.align_to(*basename,WPTS)
+    # dspeeds = list(dspeed.shape)
+    # dspeeds[-1] = f.nwpts()
+    # dspeed = zero_pad(dspeed.broadcast_to(dspeeds)-1,wpts_start-1,wpts_end)
+    # print(dspeed)
+    # raise Exception
     dparams=applydxy(f, dxy)
-    dparams["v"]=f.v.align_to(*basename,WPTS)*(1+dspeed.align_to(*basename,WPTS))#.align_as(*-1,wpts_start-1,wpts_end)
+    #dparams["v"]=f.v.align_to(*basename,WPTS)*(1+dspeed)#.align_as(*-1,wpts_start-1,wpts_end)
 
     return f.from_wpts(**dparams)
+
+
+
+
+def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f):
+    '''
+    wpts_start>=0
+    wpts_start unchanged
+    wpts_rejoin unchanged
+    '''
+    argstocheck = (dtheta,wpts_start,wpts_turn,wpts_rejoin)
+    basename = compute_basename(f,*argstocheck)#named.mergenames((f.theta.names[:-1],)+ tuple(x.names for x in argstocheck))
+
+    wpts_turn = wpts_turn -1
+    wpts_rejoin = wpts_rejoin -1
+    wpts_start = wpts_start -1
+    newf = addangle_no_rejoin(dtheta,wpts_start,wpts_rejoin,f)
+
+    def compute_theta_turn_rejoin(f1,f2):
+        turn = gather_wpts(f1.compute_wpts(),wpts_turn)
+        rejoin = gather_wpts(f2.compute_wpts(),wpts_rejoin)
+        diff = (rejoin-turn).align_to(...,XY)
+        return torch.atan2(diff[...,1],diff[...,0]).align_to(*basename)
+    newtheta = compute_theta_turn_rejoin(newf,newf)
+    print(f"{newtheta.names=}  {newtheta.shape=}")
+    # raise Exception
+    # print(f"{newtheta.names=} {newtheta.shape=}")
+    # print(f"{dtheta.names=} {dtheta.shape=}")
+    oldtheta = compute_theta_turn_rejoin(f,f) + dtheta.align_to(*basename)
+
+    # newf = addangle_no_rejoin(dtheta,wpts_start,wpts_rejoin,f)
+    # print(newtheta)
+    # print(oldtheta)
+    # print(newtheta-oldtheta)
+    return addangle_no_rejoin(newtheta-oldtheta,wpts_turn,wpts_rejoin,newf)
+
+# def make_consistent(dparams):
+#     names = set(named.mergenames(tuple(x.names for x in dparams.values())))
+#     names = tuple(names.difference({XY,WPTS}))
+#     print(names)
+#     print(dparams)
+#     for  v in ["wpts"]:
+#         dparams[v] = dparams[v].align_to(*names,WPTS,XY)
+#     for v in ["v","turn_rate",]:
+#         dparams[v] = dparams[v].align_to(*names,WPTS)
+#     print(f'{dparams["xy0"].names=}')
+#     for v in ["xy0",]:
+#         dparams[v] = dparams[v].align_to(*names,XY)
+#     return dparams
+
+
+def addangle_no_rejoin(dtheta,wpts_start,wpts_turn,f):
+    basename = compute_basename(f,dtheta,wpts_start,wpts_turn)
+    newtheta = f.theta.align_to(*basename,WPTS) + dtheta.align_to(*basename,WPTS)
+    newvheading = vheading(newtheta)
+    dxytheta = newvheading - vheading(f.theta).align_as(newvheading)
+    assert(dxytheta.names[-2]==WPTS)
+    assert(dxytheta.names[-1]==XY)
+    dxy = dxytheta * f.meanv().align_as(dxytheta) * f.duration.align_as(dxytheta)
+    # print(dxy.shape,)
+    # raise Exception
+    dxy = zero_pad(dxy,wpts_start,wpts_turn)
+    dxy = torch.cumsum(dxy,axis=-2)
+    dxy = zero_pad(dxy,wpts_start,wpts_turn)
+    dparams=applydxy(f, dxy)
+    # dparams=make_consistent(applydxy(f, dtheta.names, dxy))
+    return f.from_wpts(**dparams)
+
 
 def adddtwithoutchangingotherdates(dt,whichwpts,whichtomove,f):#xy0,v,theta,duration,turn_rate)
     vhead = vheading(f.theta)
@@ -272,69 +353,6 @@ def compute_basename(f,*args):# merge all but XY, WPTS and T axis
     newnames = named.mergenames((f.theta.names[:-1],)+ tuple(x.names for x in args))
     return tuple(sorted(newnames))
 
-def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f):
-    '''
-    wpts_start>=0
-    wpts_start unchanged
-    wpts_rejoin unchanged
-    '''
-    argstocheck = (dtheta,wpts_start,wpts_turn,wpts_rejoin)
-    basename = compute_basename(f,*argstocheck)#named.mergenames((f.theta.names[:-1],)+ tuple(x.names for x in argstocheck))
-
-    wpts_turn = wpts_turn -1
-    wpts_rejoin = wpts_rejoin -1
-    wpts_start = wpts_start -1
-    newf = addangle_no_rejoin(dtheta,wpts_start,wpts_rejoin,f)
-
-    def compute_theta_turn_rejoin(f1,f2):
-        turn = gather_wpts(f1.compute_wpts(),wpts_turn)
-        rejoin = gather_wpts(f2.compute_wpts(),wpts_rejoin)
-        diff = (rejoin-turn).align_to(...,XY)
-        return torch.atan2(diff[...,1],diff[...,0]).align_to(*basename)
-    newtheta = compute_theta_turn_rejoin(newf,newf)
-    print(f"{newtheta.names=}  {newtheta.shape=}")
-    # raise Exception
-    # print(f"{newtheta.names=} {newtheta.shape=}")
-    # print(f"{dtheta.names=} {dtheta.shape=}")
-    oldtheta = compute_theta_turn_rejoin(f,f) + dtheta.align_to(*basename)
-
-    # newf = addangle_no_rejoin(dtheta,wpts_start,wpts_rejoin,f)
-    # print(newtheta)
-    # print(oldtheta)
-    # print(newtheta-oldtheta)
-    return addangle_no_rejoin(newtheta-oldtheta,wpts_turn,wpts_rejoin,newf)
-
-# def make_consistent(dparams):
-#     names = set(named.mergenames(tuple(x.names for x in dparams.values())))
-#     names = tuple(names.difference({XY,WPTS}))
-#     print(names)
-#     print(dparams)
-#     for  v in ["wpts"]:
-#         dparams[v] = dparams[v].align_to(*names,WPTS,XY)
-#     for v in ["v","turn_rate",]:
-#         dparams[v] = dparams[v].align_to(*names,WPTS)
-#     print(f'{dparams["xy0"].names=}')
-#     for v in ["xy0",]:
-#         dparams[v] = dparams[v].align_to(*names,XY)
-#     return dparams
-
-
-def addangle_no_rejoin(dtheta,wpts_start,wpts_turn,f):
-    basename = compute_basename(f,dtheta,wpts_start,wpts_turn)
-    newtheta = f.theta.align_to(*basename,WPTS) + dtheta.align_to(*basename,WPTS)
-    newvheading = vheading(newtheta)
-    dxytheta = newvheading - vheading(f.theta).align_as(newvheading)
-    assert(dxytheta.names[-2]==WPTS)
-    assert(dxytheta.names[-1]==XY)
-    dxy = dxytheta * f.meanv().align_as(dxytheta) * f.duration.align_as(dxytheta)
-    # print(dxy.shape,)
-    # raise Exception
-    dxy = zero_pad(dxy,wpts_start,wpts_turn)
-    dxy = torch.cumsum(dxy,axis=-2)
-    dxy = zero_pad(dxy,wpts_start,wpts_turn)
-    dparams=applydxy(f, dxy)
-    # dparams=make_consistent(applydxy(f, dtheta.names, dxy))
-    return f.from_wpts(**dparams)
 
 def addlongitudinaldspeed(dspeed,f):
     newnames = processnames(dspeed.names,f.v.names)
