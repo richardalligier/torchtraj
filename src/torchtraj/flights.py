@@ -61,6 +61,9 @@ class Flights:
         # print("endchecknames")
         # assert(f.theta.names == f.duration.names)
         # assert(f.turn_rate.names==f.duration.names)
+    @property
+    def names(self):
+        return self.v.names[:-1]
     @classmethod
     def new(cls,xy0,v,theta,duration,turn_rate):
         return cls(xy0,v,theta,duration,turn_rate)

@@ -1,6 +1,6 @@
 from torchtraj.utils import WPTS, XY,T
 from torchtraj.flights import Flights, FlightsWithAcc
-from torchtraj.uncertainty import PARAMS, DT0, DT1, DANGLE, DSPEED, adddt, addangle,  addlongitudinaldspeed
+from torchtraj.uncertainty import PARAMS, DT0, DT1, DANGLE, DSPEED, adddt_translate,adddt_rotate, addangle,  addlongitudinaldspeed
 from torchtraj.uncertainty import changespeed_old as changespeed
 import torch
 # from torchtraj.qhull import QhullDist
@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 
 
 def generatehulls_maneuvered(flights, t, dt0, dt1, dangle, dspeed):
-    flights = adddt(dt0,0,(0,2),flights)
-    flights = adddt(dt1,1,(1,2),flights)
+    flights = adddt_translate(dt0,0,(0,2),flights)
+    flights = adddt_rotate(dt1,1,(1,2),flights)
     flights = addangle(dangle,1,(1,2),flights)
     flights = changespeed(dspeed,(0,2),flights)
     return traj.generate(flights, t)
