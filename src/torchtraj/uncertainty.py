@@ -97,23 +97,30 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     wpts_end-1 is the last wpts to be shifted
     wpts_end unchanged
     '''
+    wpts_start = wpts_start - 1
+    wpts_end = wpts_end - 1
     argstocheck = (dt,wpts_start,wpts_end)
     basename = compute_basename(f,*argstocheck)
     vhead = vheading(f.theta)
     meanv = f.meanv()
     assert(vhead.names[-2]==WPTS)
     assert(wpts_start.min()>0)
-    wpts_start = wpts_start - 1
-    wpts_end = wpts_end - 1
+    duration_at_wpt = gather_wpts(f.duration,wpts_start).align_to(*basename)
+    newduration_at_wpt = duration_at_wpt+dt.align_to(*basename)
+    newduration_at_wpt = newduration_at_wpt.clip(min=0.)
+    actual_dt = newduration_at_wpt - duration_at_wpt
+    remaining_dt = dt - actual_dt
     dxy = (vhead * meanv.align_to(...,XY)).align_to(*basename,WPTS,XY)
-    dxy = dxy * dt.align_as(dxy)
+    dxy = dxy * actual_dt.align_as(dxy)
     dxy = zero_pad(dxy,wpts_start-1,wpts_start+1)
-    # print(dxy)
-    # raise Exception
     dxy = torch.cumsum(dxy,axis=-2)
     dxy = zero_pad(dxy,wpts_start-1,wpts_end)
     dparams = applydxy(f,dxy)
-    return f.from_wpts(**dparams)
+    result = f.from_wpts(**dparams)
+    if remaining_dt.max()==0.:
+        return result
+    else:
+        return adddt_translate(remaining_dt,wpts_start,wpts_end+1,result)
 
 
 def _contract(f,fref,wpts_start,wpts_end):
@@ -221,7 +228,9 @@ def changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f):
     # dparams["v"] = f.v.align_to(*basename,WPTS)*(1+dspeed)#.align_as(*-1,wpts_start-1,wpts_end)
     return f.from_wpts(**dparams)
 
-
+def shift_t_zero(f,tshift):
+    assert(tshift.min()>=0.)
+    
 
 
 def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f, contract=True):

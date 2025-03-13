@@ -122,6 +122,7 @@ def segment_xy_lowmemory(f, t, tstart, v, theta, duration):#t, tstart, vxy, dura
     return xy #torch.sum(xy,axis=xy.names.index(WPTS))
 
 def generate(f,t):
+    assert(t.min()>=0)
     return generate_gen(f,t,segment_xy)
 def generate_lowmem(f,t):
     return generate_gen(f,t,segment_xy_lowmemory)

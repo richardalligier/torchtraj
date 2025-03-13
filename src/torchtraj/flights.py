@@ -84,6 +84,55 @@ class Flights:
         return self.v[...,:-1]
     def __str__(self):
         return "\n".join(k+":"+str(v)+str(v.shape) for k,v in sorted(self.dictparams().items()))
+    def add_wpt_at_t(self,t:torch.tensor):
+        assert(t.min()>0.)
+        # assert(T in t.names)
+        assert(WPTS not in t.names)
+        def get_tstart(tend):
+            return torch.cat([torch.zeros_like(tend[...,:1]),tend[...,:-1]],axis=-1)
+        tend = torch.cumsum(self.duration,axis=-1)
+        tstart = get_tstart(tend)
+        assert((tend-tstart).min()>0.)
+        newtend = torch.cat([t.align_as(tend),tend],axis=-1)
+        newtstart = get_tstart(newtend)
+        print(tstart)
+        print(tend)
+        print(newtstart)
+        print(newtend)
+        raise Exception
+        tcum = torch.cat(tcum[...,],axis=-1)
+        assert ((t<tcum.max(axis=-1)).all())
+
+    def _wpts_at_t(self,t:torch.tensor):
+        names = named.mergenames((self.duration.names,t.names))
+        dates = self.duration.cumsum(axis=-1)
+        mask = (t.align_to(*names) == dates.align_to(*names)).align_to(...,WPTS)
+        indexes = torch.arange(start=1,end=1+dates.shape[-1],device=mask.device).rename(WPTS)
+        res = (indexes * mask).sum(axis=-1)
+        return res
+
+    def wpts_at_t(self,t:torch.tensor):
+        res = self._wpts_at_t(t)
+        assert(res.min()>0)
+        return res
+
+    def is_wpts_at_t(self,t:torch.tensor):
+        return self._wpts_at_t(t) > 0
+
+    def shift_xy0(self,t):
+        print(t,type(t))
+        assert(isinstance(t,float))
+        assert(t>=0.)
+        dparam = {k:v.clone() for k,v in self.dictparams().items()}
+        if t == 0.:
+            return self.new(**dparam)
+        for k in ["theta","duration","turn_rate","v"]:
+            assert(dparam[k].names[-1]==WPTS)
+            dparam[k]=named.cat([dparam[k][...,:1],dparam[k]],dim=-1)
+        v0 = vheading(self.theta[...,0])
+        dparam["xy0"] = self.xy0 -  t * self.v[...,0].align_as(self.xy0) * v0
+        dparam["duration"][...,0] = t
+        return self.new(**dparam)
 
     def segdist(self,clipped_t,duration):
         return self.v.align_as(clipped_t) * clipped_t

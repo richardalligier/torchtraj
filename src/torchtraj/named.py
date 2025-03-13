@@ -29,6 +29,11 @@ def mergenames(args):
 #     return tuple(set(n1).union(set(n2)))
 
 
+def maximum(input,other):
+    assert(input.names==other.names)
+    names = input.names
+    return torch.maximum(input.rename(None),other.rename(None)).rename(*names)
+
 def align(x,y,names):
     return x.align_to(*names),y.align_to(*names)
 
