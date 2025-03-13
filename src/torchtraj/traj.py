@@ -4,8 +4,8 @@ import torch
 import sys
 
 from . import named
-from .utils import WPTS,T,XY
-from .flights import vheading
+from .utils import WPTS,T,XY,vheading
+# from .flights import vheading
 
 
 # THETA = "theta"

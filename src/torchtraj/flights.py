@@ -1,16 +1,10 @@
 from . import named
-from .utils import WPTS, XY
+from .utils import WPTS, XY, vheading, T, repeat_on_new_axis
 import pandas as pd
 import torch
 import numpy as np
-def vheading(theta):
-    cx = torch.cos(theta)
-    cy = torch.sin(theta)
-    return torch.cat([named.unsqueeze(vd,-1,XY) for vd in (cx,cy)],-1)
-
-def repeat_on_new_axis(lparams,ntimes,name):
-    l = [named.repeat(named.unsqueeze(x,0,name),(ntimes,)+(1,) * len(x.shape)) for x in lparams]
-    return l
+from . import traj
+from . import uncertainty
 
 
 def stack_lflights(lflights,batchname):
@@ -29,6 +23,8 @@ def cat_lflights(lflights,dim=0):
 
 
 
+def get_tstart(tend):
+    return torch.cat([torch.zeros_like(tend[...,:1]),tend[...,:-1]],axis=-1)
 
 class Flights:
     ncoords = 2
@@ -86,22 +82,42 @@ class Flights:
         return "\n".join(k+":"+str(v)+str(v.shape) for k,v in sorted(self.dictparams().items()))
     def add_wpt_at_t(self,t:torch.tensor):
         assert(t.min()>0.)
-        # assert(T in t.names)
-        assert(WPTS not in t.names)
-        def get_tstart(tend):
-            return torch.cat([torch.zeros_like(tend[...,:1]),tend[...,:-1]],axis=-1)
+        assert(T not in t.names)
+        assert(WPTS in t.names)
+        for x in t.names:
+            assert x in self.duration.names
         tend = torch.cumsum(self.duration,axis=-1)
         tstart = get_tstart(tend)
         assert((tend-tstart).min()>0.)
-        newtend = torch.cat([t.align_as(tend),tend],axis=-1)
+        newtend = named.sort(torch.cat([t.align_as(tend),tend],axis=-1),dim=WPTS)
+        def separate(tend):
+            tstart = get_tstart(tend)
+            duration = tend-tstart
+            if duration.min()>0.:
+                return tend
+            else:
+                dmin = duration.rename(None)[(duration > 0.).rename(None)].min()
+                tend = tend - dmin * 0.5 * (duration==0.)
+                return separate(named.sort(tend,dim=WPTS))
+        newtend  = separate(newtend)
         newtstart = get_tstart(newtend)
-        print(tstart)
-        print(tend)
-        print(newtstart)
-        print(newtend)
-        raise Exception
-        tcum = torch.cat(tcum[...,],axis=-1)
-        assert ((t<tcum.max(axis=-1)).all())
+        xy = traj.generate(self, newtend.rename(**{WPTS:T})).rename(**{T:WPTS})
+        iwpts = self.which_seg_at_t(newtstart.rename(**{WPTS:T}))#.rename(**{T:WPTS})
+        v = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS})
+        assert(self.turn_rate.shape[-1]==1)
+        turn_rate = self.turn_rate.clone()
+        # turn_rate = uncertainty.gather_wpts(padded_turn_rate,iwpts)
+        # print(iwpts)
+        # print(v)
+        # print(turn_rate)
+        # raise Exception
+        assert((newtend-newtstart).min()>0.)
+        print(xy)
+        print(v)
+        print(self.v)
+        print(turn_rate)
+        print(self.xy0)
+        return self.from_wpts(self.xy0.clone(),v,turn_rate,wpts=xy)
 
     def _wpts_at_t(self,t:torch.tensor):
         names = named.mergenames((self.duration.names,t.names))
@@ -118,6 +134,15 @@ class Flights:
 
     def is_wpts_at_t(self,t:torch.tensor):
         return self._wpts_at_t(t) > 0
+
+    def which_seg_at_t(self,t):
+        names = named.mergenames((self.duration.names,t.names))
+        tend = torch.cumsum(self.duration,axis=-1)
+        tstart = get_tstart(tend)
+        _,iwpts =torch.max((t.align_to(*names)<tend.align_to(*names)).rename(None),dim=-1)
+        return iwpts.rename(*names[:-1])
+        # v = uncertainty.gather_wpts(self.v,iwpts)
+        # print(v)
 
     def shift_xy0(self,t):
         print(t,type(t))
@@ -233,6 +258,8 @@ class FlightsWithAcc(Flights):
     #     return meanv
     def speed_at_turns(self):
         return self.v[...,1:]
+    def v_at_t(self,t):
+        raise NotImplemented
     def segdist(self,clipped_t,duration):
         # print(self.v.names, duration.names)
         acc = named.pad(torch.diff(self.v,axis=-1),(0,1),'constant',0)/duration.align_as(self.v)

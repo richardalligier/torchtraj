@@ -44,6 +44,11 @@ def align_common(*args):
 def namestoints(t,whichnames):
     return tuple(t.names.index(n) for n in whichnames)
 
+def sort(t,dim):
+    names = t.names
+    i = names.index(dim)
+    return torch.sort(t.rename(None),dim=i)[0].rename(*names)
+
 
 def gather(input,dimname,index):
     assert(dimname in input.names)
