@@ -27,7 +27,7 @@ def get_tstart(tend):
     return torch.cat([torch.zeros_like(tend[...,:1]),tend[...,:-1]],axis=-1)
 
 class Flights:
-    ncoords = 2
+    # ncoords = 2
     def __init__(self,xy0,v,theta,duration,turn_rate):
         assert(v.min()>0)
         self.xy0 = xy0
@@ -97,31 +97,28 @@ class Flights:
                 return tend
             else:
                 dmin = duration.rename(None)[(duration > 0.).rename(None)].min()
+                print(f"{dmin=}")
                 tend = tend - dmin * 0.5 * (duration==0.)
                 return separate(named.sort(tend,dim=WPTS))
         newtend  = separate(newtend)
         newtstart = get_tstart(newtend)
-        xy = traj.generate(self, newtend.rename(**{WPTS:T})).rename(**{T:WPTS})
+        d = {}
+        # xy = traj.generate(self, newtend.rename(**{WPTS:T})).rename(**{T:WPTS})
         iwpts = self.which_seg_at_t(newtstart.rename(**{WPTS:T}))#.rename(**{T:WPTS})
-        v = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS})
+        d["v"] = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS})
+        d["theta"] = uncertainty.gather_wpts(self.theta,iwpts).rename(**{T:WPTS})
+        d["duration"] = newtend - newtstart
         assert(self.turn_rate.shape[-1]==1)
-        turn_rate = self.turn_rate.clone()
-        # turn_rate = uncertainty.gather_wpts(padded_turn_rate,iwpts)
-        # print(iwpts)
-        # print(v)
-        # print(turn_rate)
-        # raise Exception
-        assert((newtend-newtstart).min()>0.)
-        print(xy)
-        print(v)
-        print(self.v)
-        print(turn_rate)
-        print(self.xy0)
-        return self.from_wpts(self.xy0.clone(),v,turn_rate,wpts=xy)
+        d["turn_rate"] = self.turn_rate.clone()
+        d["xy0"] = self.xy0.clone()
+        assert(d["duration"].min()>0.)
+        return self.new(**d)
 
     def _wpts_at_t(self,t:torch.tensor):
         names = named.mergenames((self.duration.names,t.names))
         dates = self.duration.cumsum(axis=-1)
+        print(dates)
+        print(t)
         mask = (t.align_to(*names) == dates.align_to(*names)).align_to(...,WPTS)
         indexes = torch.arange(start=1,end=1+dates.shape[-1],device=mask.device).rename(WPTS)
         res = (indexes * mask).sum(axis=-1)
@@ -129,6 +126,7 @@ class Flights:
 
     def wpts_at_t(self,t:torch.tensor):
         res = self._wpts_at_t(t)
+        print(res)
         assert(res.min()>0)
         return res
 

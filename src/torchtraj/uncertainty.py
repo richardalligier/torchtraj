@@ -229,7 +229,7 @@ def changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f):
 
 def shift_t_zero(f,tshift):
     assert(tshift.min()>=0.)
-    
+
 
 
 def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f, contract=True):
