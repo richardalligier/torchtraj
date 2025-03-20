@@ -18,6 +18,8 @@ def cat_lflights(lflights,dim=0):
     t = type(lflights[0])
     for f in lflights:
         assert(t==type(f))
+    maxnwpts = max(f.nwpts() for f in lflights)
+    lflights = [f.pad_wpts_at_end(maxnwpts-f.nwpts()) for f in lflights]
     d = {k:named.cat([f.dictparams()[k] for f in lflights],dim=dim) for k in lflights[0].dictparams()}
     return lflights[0].from_argsdict(d)
 
@@ -29,13 +31,14 @@ def get_tstart(tend):
 class Flights:
     # ncoords = 2
     def __init__(self,xy0,v,theta,duration,turn_rate):
-        assert(v.min()>0)
         self.xy0 = xy0
         self.v = v
         self.theta = theta
         self.duration = duration
         self.turn_rate = turn_rate
         self.check_names()
+        assert(v.min()>0)
+
         # self.xy0 = xy0.rename(None)
         # self.v = v.rename(None)
         # self.theta = theta.rename(None)
@@ -50,10 +53,11 @@ class Flights:
         # print(f)
         assert(f.duration.names[-1]==WPTS)
         assert(f.xy0.names[-1]==XY)
-        assert(f.theta.names[:-1]==f.xy0.names[:-1])
+        # print(f.v.names,f.duration.names)
         assert(f.v.names==f.duration.names)
-        assert(f.theta.names == f.duration.names)
         assert(f.turn_rate.names==f.duration.names)
+        assert(f.theta.names[:-1]==f.xy0.names[:-1])
+        assert(f.theta.names == f.duration.names)
         # print("endchecknames")
         # assert(f.theta.names == f.duration.names)
         # assert(f.turn_rate.names==f.duration.names)
@@ -80,6 +84,33 @@ class Flights:
         return self.v[...,:-1]
     def __str__(self):
         return "\n".join(k+":"+str(v)+str(v.shape) for k,v in sorted(self.dictparams().items()))
+
+    def pad_wpts_at_end(self,npad):
+        d = {k:v.clone() for k,v in self.dictparams().items()}
+        # print(self.turn_rate)
+        # print(self.turn_rate.shape)
+        if npad == 0:
+            return self.from_argsdict(d)
+        assert(self.turn_rate.shape[-1]==1)
+        durationbeforesplit=self.duration.cumsum(axis=-1)[...,-1]
+        for v in ["v","theta"]:
+            d[v]=named.pad(d[v],(0,npad),mode="replicate")
+        lastduration = self.duration[...,-1]#.min().item()
+        step_t = torch.trunc(lastduration * 0.9 / npad * 1024.) / 1024.
+        assert( step_t.min()>0.)
+        added_t = step_t * npad
+        d["duration"][...,-1] = d["duration"][...,-1] - added_t
+        for v in ["duration"]:
+            d[v]=named.pad(d[v],(0,npad),mode="constant",value=0.)#added_t / npad * 0.5)
+            d[v][...,-npad:] = step_t.rename(None)
+        durationaftersplit=d[v].cumsum(axis=-1)[...,-1]
+        # print(self.duration.cumsum(axis=-1))
+        # print(d["duration"].cumsum(axis=-1))
+        diff = (durationaftersplit.rename(None)-durationbeforesplit.rename(None)).abs().max().item()
+        assert(diff>=0.)
+        assert (diff==0.)
+        return self.from_argsdict(d)
+
     def add_wpt_at_t(self,t:torch.tensor):
         assert(t.min()>0.)
         assert(T not in t.names)
@@ -87,9 +118,18 @@ class Flights:
         for x in t.names:
             assert x in self.duration.names
         tend = torch.cumsum(self.duration,axis=-1)
+        assert(tend.names[-1]==WPTS)
         tstart = get_tstart(tend)
         assert((tend-tstart).min()>0.)
-        newtend = named.sort(torch.cat([t.align_as(tend),tend],axis=-1),dim=WPTS)
+        t = t.align_as(tend)
+        print(f"{t.shape=} {t.names=} {tend.shape=} {tend.names=}")
+        tshape = tuple(named.broadcastshapes(t.shape,tend.shape))
+        tshape = tshape[:-1]+(1,)
+        t = t.broadcast_to(tshape).clone()
+        # print(f"{t.names=}")
+        merged = torch.cat([t,tend],axis=-1)
+        newtend = named.sort(merged,dim=WPTS)
+        # raise Exception
         def separate(tend):
             tstart = get_tstart(tend)
             duration = tend-tstart
@@ -97,19 +137,22 @@ class Flights:
                 return tend
             else:
                 dmin = duration.rename(None)[(duration > 0.).rename(None)].min()
-                print(f"{dmin=}")
+                # print(f"{dmin=}")
+                # raise Exception
                 tend = tend - dmin * 0.5 * (duration==0.)
-                return separate(named.sort(tend,dim=WPTS))
-        newtend  = separate(newtend)
+                res = named.sort(tend,dim=WPTS)
+                return separate(res)
+        newtend  = separate(newtend).align_as(tend)
         newtstart = get_tstart(newtend)
         d = {}
         # xy = traj.generate(self, newtend.rename(**{WPTS:T})).rename(**{T:WPTS})
         iwpts = self.which_seg_at_t(newtstart.rename(**{WPTS:T}))#.rename(**{T:WPTS})
-        d["v"] = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS})
-        d["theta"] = uncertainty.gather_wpts(self.theta,iwpts).rename(**{T:WPTS})
-        d["duration"] = newtend - newtstart
+        d["duration"] = (newtend - newtstart)#.align_as(self.duration)
+        d["v"] = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS}).align_as(d["duration"])
+        d["theta"] = uncertainty.gather_wpts(self.theta,iwpts).rename(**{T:WPTS}).align_as(d["duration"])
+
         assert(self.turn_rate.shape[-1]==1)
-        d["turn_rate"] = self.turn_rate.clone()
+        d["turn_rate"] = self.turn_rate.clone().align_as(d["duration"])
         d["xy0"] = self.xy0.clone()
         assert(d["duration"].min()>0.)
         return self.new(**d)
@@ -117,8 +160,8 @@ class Flights:
     def _wpts_at_t(self,t:torch.tensor):
         names = named.mergenames((self.duration.names,t.names))
         dates = self.duration.cumsum(axis=-1)
-        print(dates)
-        print(t)
+        # print(dates)
+        # print(t)
         mask = (t.align_to(*names) == dates.align_to(*names)).align_to(...,WPTS)
         indexes = torch.arange(start=1,end=1+dates.shape[-1],device=mask.device).rename(WPTS)
         res = (indexes * mask).sum(axis=-1)
@@ -126,7 +169,7 @@ class Flights:
 
     def wpts_at_t(self,t:torch.tensor):
         res = self._wpts_at_t(t)
-        print(res)
+        # print(res)
         assert(res.min()>0)
         return res
 
@@ -149,7 +192,8 @@ class Flights:
         dparam = {k:v.clone() for k,v in self.dictparams().items()}
         if t == 0.:
             return self.new(**dparam)
-        for k in ["theta","duration","turn_rate","v"]:
+        assert(dparam["turn_rate"].shape[-1]==1)
+        for k in ["theta","duration","v"]:
             assert(dparam[k].names[-1]==WPTS)
             dparam[k]=named.cat([dparam[k][...,:1],dparam[k]],dim=-1)
         v0 = vheading(self.theta[...,0])

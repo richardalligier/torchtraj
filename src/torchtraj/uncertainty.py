@@ -3,6 +3,7 @@ from . import named
 from .utils import WPTS, T, XY,vheading,repeat_on_new_axis
 import itertools
 import matplotlib.pyplot as plt
+import operator as op
 
 DT0 = "dt0"
 DT1 = "dt1"
@@ -108,7 +109,7 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     newduration_at_wpt = duration_at_wpt+dt.align_to(*basename)
     newduration_at_wpt = newduration_at_wpt.clip(min=0.)
     actual_dt = newduration_at_wpt - duration_at_wpt
-    remaining_dt = dt - actual_dt
+    remaining_dt = dt.align_to(*basename) - actual_dt
     dxy = (vhead * meanv.align_to(...,XY)).align_to(*basename,WPTS,XY)
     dxy = dxy * actual_dt.align_as(dxy)
     dxy = zero_pad(dxy,wpts_start-1,wpts_start+1)
@@ -122,7 +123,27 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
         return adddt_translate(remaining_dt,wpts_start,wpts_end+1,result)
 
 
-def _contract(f,fref,wpts_start,wpts_end):
+# def _contract(f,fref,wpts_start,wpts_end):
+#     '''
+#     wpts_start>0
+#     wpts_start unchanged
+#     this shift is propagated to others till wpts_end-1
+#     wpts_end-1 is the last wpts to be shifted
+#     wpts_end unchanged
+#     '''
+#     assert(wpts_start.min()>0)
+#     wpts_start = wpts_start-1
+#     wpts_end = wpts_end-1
+#     argstocheck = (fref,wpts_start,wpts_end)
+#     basename = compute_basename(f,*argstocheck)
+#     assert((wpts_start.align_to(*basename)<wpts_end.align_to(*basename)).rename(None).all())
+#     wpts = f.compute_wpts()
+#     beacon = gather_wpts(wpts,wpts_end-1)
+#     return _contract_beacon(f,fref,wpts_start,wpts_end,beacon)
+
+
+
+def _contract(f,fref,wpts_start,wpts_end,beacon=None):
     '''
     wpts_start>0
     wpts_start unchanged
@@ -137,10 +158,15 @@ def _contract(f,fref,wpts_start,wpts_end):
     basename = compute_basename(f,*argstocheck)
     assert((wpts_start.align_to(*basename)<wpts_end.align_to(*basename)).rename(None).all())
     # print(f"{basename=}")
-    distf = compute_distance_turn_rejoin(f,wpts_start,wpts_end)
-    distfref = compute_distance_turn_rejoin(fref,wpts_start,wpts_end)
+    wpts = f.compute_wpts()
+    if beacon is None:
+        beacon = gather_wpts(wpts,wpts_end-1)
+    distf = compute_distance_start_beacon(wpts,wpts_start,beacon)
+    wptsref = fref.compute_wpts()
+    distfref = compute_distance_start_beacon(wptsref,wpts_start,beacon)
     ratio = distf.align_to(*basename) / distfref.align_to(*basename)
-    xy = f.compute_wpts()
+    print(f"{ratio=}")
+    xy = wpts
     xy_zero = gather_wpts(xy,wpts_start)
     # print(f"{ratio=}")
     # print(f"{xy_zero=}")
@@ -149,46 +175,86 @@ def _contract(f,fref,wpts_start,wpts_end):
     dparams = applydxy(f,dxy)
     return f.from_wpts(**dparams)
 
-def compute_theta_turn_rejoin(f1,wpts_start,wpts_end):
-    '''
-    compute angle to fly from start to end
-    '''
-    wpts = f1.compute_wpts()
+# def compute_theta_start_end(wpts,wpts_start,wpts_end):
+#     '''
+#     compute angle to fly from start to end
+#     '''
+#     beacon = gather_wpts(wpts,wpts_end-1)
+#     return compute_theta_start_beacon(wpts,wpts_start,beacon)
+
+def compute_theta_start_beacon(wpts,wpts_start,beacon):
     turn = gather_wpts(wpts,wpts_start-1)
-    rejoin = gather_wpts(wpts,wpts_end-1)
-    diff = (rejoin-turn).align_to(...,XY)
+    diff = op.sub(*named.align_common(beacon,turn)).align_to(...,XY)
     return torch.atan2(diff[...,1],diff[...,0])
 
 
-def compute_distance_turn_rejoin(f1,wpts_start,wpts_end):
+def compute_distance_start_end(wpts,wpts_start,wpts_end):
     '''
     compute angle to fly from start to end
     '''
-    wpts = f1.compute_wpts()
+    beacon = gather_wpts(wpts,wpts_end)
+    return compute_distance_start_beacon(wpts,wpts_start,beacon)
+
+def compute_distance_start_beacon(wpts,wpts_start,beacon):
+    '''
+    compute angle to fly from start to end
+    '''
     turn = gather_wpts(wpts,wpts_start)
-    rejoin = gather_wpts(wpts,wpts_end)
-    print(f"{turn=}")
-    print(f"{rejoin=}")
-    diff = (rejoin-turn).align_to(...,XY)**2
+    diff = op.sub(*named.align_common(beacon,turn)).align_to(...,XY)**2
     return torch.sqrt(torch.sum(diff,axis=-1))
 
-def adddt_rotate(dt,wpts_start,wpts_end,f, contract=True):
+
+def adddt_rotate(dt,wpts_start,wpts_turn,wpts_end,f, contract=True,beacon=None):
     '''
     wpts_start>0
     wpts_start-1 unchanged
-    wpts_start is shifted
-    from this shift, a rotation is computed from wpts_start to wpts_end , and is applied
+    wpts_start to wpts_turn is shifted
+    from this shift, a rotation is computed from wpts_turn to wpts_end , and is applied
     wpts_end is the last wpts to be shifted
     wpts_end+1 unchanged
     '''
     argstocheck = (dt,wpts_start,wpts_end)
     basename = compute_basename(f,*argstocheck)
-    newf = adddt_translate(dt,wpts_start,wpts_end,f)
-    newtheta = compute_theta_turn_rejoin(newf,wpts_start,wpts_end).align_to(*basename)
+    newf = adddt_translate(dt,wpts_start,wpts_end+1,f)
+    newwpts = newf.compute_wpts()
+    wpts = f.compute_wpts()
+    if beacon is None:
+        beacon = gather_wpts(wpts,wpts_end-1)
+        print(f"{beacon=}")
+    newtheta = compute_theta_start_beacon(newwpts,wpts_turn,beacon).align_to(*basename)
     print(f"{newtheta.names=}  {newtheta.shape=}")
-    oldtheta = compute_theta_turn_rejoin(f,wpts_start,wpts_end).align_to(*basename) #+ dtheta.align_to(*basename)
-    newf = rotate_wpts(newtheta-oldtheta,wpts_start,wpts_end,newf)
-    return _contract(newf,f,wpts_start,wpts_end) if contract else newf
+    oldtheta = compute_theta_start_beacon(wpts,wpts_turn,beacon).align_to(*basename) #+ dtheta.align_to(*basename)
+    newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_end+1,newf)
+    return _contract(newf,f,wpts_turn,wpts_end+1,beacon=beacon) if contract else newf
+
+
+def change_longitudinal_speed(dspeed,wpts_start,wpts_rejoin,f):
+    '''
+    wpts_start unchanged
+    wpts_start+1 is the shifted due to speed
+    wpts_rejoin unchanged
+    speed on segments between wpts_start to wpts_rejoin is changed
+    '''
+    assert(f.v.names[-1] == WPTS)
+    argstocheck = (dspeed,wpts_rejoin,wpts_start)
+    basename = compute_basename(f,*argstocheck)
+    dparams = {}
+    dspeed = dspeed.align_to(*basename,WPTS)
+    bshape = list(dspeed.shape)
+    bshape[-1] = f.nwpts()
+    dspeed = dspeed.broadcast_to(bshape)
+    # print(wpts_rejoin.names,dspeed.names)
+    dspeed = 1 + zero_pad(dspeed-1,wpts_start-1,wpts_rejoin)
+    # print(dspeed)
+    # raise Exception
+    dparams["v"] =  op.mul(*named.align_common(f.v,dspeed)).align_to(...,WPTS)
+    dparams["turn_rate"] = f.turn_rate.clone().align_as(dparams["v"])
+    # print(dparams["v"].names)
+    # print(f.compute_wpts().names)
+    dparams["wpts"] = f.compute_wpts().align_to(*dparams["v"].names,XY)
+    dparams["xy0"] = f.xy0.clone().align_to(*dparams["v"].names[:-1],XY)
+    dparams["turn_rate"] = f.turn_rate.clone().align_as(dparams["v"])
+    return f.from_wpts(**dparams)
 
 def changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f):
     '''
@@ -214,49 +280,78 @@ def changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f):
     print(dxy)
     dxy = zero_pad(dxy,wpts_start-1,wpts_turn)
     dxy = torch.cumsum(dxy,axis=-2)
-    dxy = zero_pad(dxy,wpts_start-1,wpts_turn)
+    dxy = zero_pad(dxy,wpts_start-1,wpts_rejoin)
     print(dxy)
     # raise Exception
     dspeed = dspeed.align_to(*basename,WPTS)
     dspeeds = list(dspeed.shape)
     dspeeds[-1] = f.nwpts()
-    dspeed = zero_pad(dspeed.broadcast_to(dspeeds)-1,wpts_start-1,wpts_end)
+    dspeed = zero_pad(dspeed.broadcast_to(dspeeds)-1,wpts_start-1,wpts_rejoin)
     # print(dspeed)
     # raise Exception
     dparams = applydxy(f, dxy)
-    # dparams["v"] = f.v.align_to(*basename,WPTS)*(1+dspeed)#.align_as(*-1,wpts_start-1,wpts_end)
+    dparams["v"] = f.v.align_to(*basename,WPTS)*(1+dspeed)#.align_as(*-1,wpts_start-1,wpts_end)
     return f.from_wpts(**dparams)
+
+
+
+#change wpts de fin
+def changespeed_rotate(dspeed,wpts_start,wpts_turn,wpts_rejoin,f,beacon=None,contract=True):
+    '''
+    wpts_start unchanged
+    wpts_start+1 is the shifted due to speed
+    wpts_turn is the shifted due to speed
+    points between wpts_turn excluded to wpts_rejoin excluded are only "rotated"
+    wpts_end unchanged
+    speed on segments between wpts_start to wpts_rejoin is changed
+    '''
+    assert(f.v.names[-1] == WPTS)
+    argstocheck = (dspeed,wpts_start,wpts_turn,wpts_rejoin)
+    basename = compute_basename(f,*argstocheck)
+    newf = changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f)
+    newwpts = newf.compute_wpts()
+    wpts = f.compute_wpts()
+    if beacon is None:
+        beacon = gather_wpts(wpts,wpts_rejoin-1)
+        print(f"{beacon=}")
+    newtheta = compute_theta_start_beacon(newwpts,wpts_turn,beacon).align_to(*basename)
+    print(f"{newtheta.names=}  {newtheta.shape=}")
+    oldtheta = compute_theta_start_beacon(wpts,wpts_turn,beacon).align_to(*basename) #+ dtheta.align_to(*basename)
+    newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_rejoin+1,newf)
+    return _contract(newf,f,wpts_turn,wpts_rejoin+1,beacon=beacon) if contract else newf
 
 def shift_t_zero(f,tshift):
     assert(tshift.min()>=0.)
 
 
 
-def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f, contract=True):
+def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f,beacon=None, contract=True):
     '''
     wpts_start>=0
     wpts_start unchanged
     wpts_start+1 is the shifted due to angle
     wpts_turn is the shifted due to angle
-    points between wpts_turn excluded to wpts_end excluded are only "rotated"
-    wpts_end unchanged
+    points between wpts_turn excluded to wpts_end included are only "rotated"
+    wpts_end+1 unchanged
+    if beacon is None, beacon is wpts[wpts_end], and consequently wpts_end is unchanged
     '''
     argstocheck = (dtheta,wpts_start,wpts_turn,wpts_rejoin)
     basename = compute_basename(f,*argstocheck)#named.mergenames((f.theta.names[:-1],)+ tuple(x.names for x in argstocheck))
-
-    # wpts_turn = wpts_turn -1
-    newf = rotate_wpts(dtheta,wpts_start,wpts_rejoin,f)
-    # return newf
-    # def compute_theta_turn_rejoin(f1):
-    #     turn = gather_wpts(f1.compute_wpts(),wpts_turn-1)
-    #     rejoin = gather_wpts(f1.compute_wpts(),wpts_rejoin-1)
-    #     diff = (rejoin-turn).align_to(...,XY)
-    #     return torch.atan2(diff[...,1],diff[...,0]).align_to(*basename)
-    newtheta = compute_theta_turn_rejoin(newf,wpts_turn,wpts_rejoin).align_to(*basename)
+    wpts_rejoin = wpts_rejoin
+    newf = rotate_wpts(dtheta,wpts_start,wpts_rejoin+1,f)
+    newwpts = newf.compute_wpts()
+    wpts = f.compute_wpts()
+    if beacon is None:
+        beacon = gather_wpts(wpts,wpts_rejoin-1)
+        print(f"compute beacon {beacon}")
+    newtheta = compute_theta_start_beacon(newwpts,wpts_turn,beacon=beacon).align_to(*basename)
     print(f"{newtheta.names=}  {newtheta.shape=}")
-    oldtheta = compute_theta_turn_rejoin(f,wpts_turn,wpts_rejoin).align_to(*basename) + dtheta.align_to(*basename)
-    newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_rejoin,newf)
-    return _contract(newf,f,wpts_turn,wpts_rejoin) if contract else newf
+    oldtheta = compute_theta_start_beacon(wpts,wpts_turn,beacon=beacon).align_to(*basename) + dtheta.align_to(*basename)
+    newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_rejoin+1,newf)
+    return _contract(newf,f,wpts_turn,wpts_rejoin+1,beacon=beacon) if contract else newf
+
+
+#def addangle_to(dtheta,wpts_start,wpts_turn,wpts_rejoin,f, contract=True):
 
 
 # def compute_rotate_to_rejoin(fref,fmodified,wpts_turn,wpts_rejoin):
@@ -285,8 +380,6 @@ def rotate_wpts(dtheta,wpts_start,wpts_end,f):
     assert(dxytheta.names[-2]==WPTS)
     assert(dxytheta.names[-1]==XY)
     dxy = dxytheta * f.meanv().align_as(dxytheta) * f.duration.align_as(dxytheta)
-    # print(dxy.shape,)
-    # raise Exception
     dxy = zero_pad(dxy,wpts_start-1,wpts_end-1)
     dxy = torch.cumsum(dxy,axis=-2)
     dxy = zero_pad(dxy,wpts_start-1,wpts_end-1)

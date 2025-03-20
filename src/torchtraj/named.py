@@ -7,7 +7,7 @@ def broadcastshapes(s1,s2):
     res = s1[:-m]+s2[:-m]
     s1 = s1[-m:]
     s2 = s2[-m:]
-    print(res,s1,s2)
+    print("b",res,s1,s2)
     for a,b in zip(s1,s2):
         assert(a==b or a==1 or b==1)
         res += (max(a,b),)
@@ -46,29 +46,30 @@ def namestoints(t,whichnames):
 
 def sort(t,dim):
     names = t.names
+    # for x in names:
+    #     assert(x is not None)
     i = names.index(dim)
-    return torch.sort(t.rename(None),dim=i)[0].rename(*names)
+    res = torch.sort(t.rename(None),dim=i)[0]
+    # print(res.shape,res.names,names)
+    # assert(len(res.shape)==len(names))
+    return res.rename(*names)
 
 
 def gather(input,dimname,index):
     assert(dimname in input.names)
     assert(dimname in index.names)
     newnames = mergenames((input.names,index.names))
-    print(f"{newnames=}")
     inp = input.align_to(*newnames).rename(None)
     ind = index.align_to(*newnames).rename(None)
+    # assert (inp.names==ind.names)
+    # inp = inp.rename(None)
+    # ind = ind.rename(None)
+    # print(f"{newnames=}")
     bshape = list(broadcastshapes(inp.shape,ind.shape))
     i = newnames.index(dimname)
     inp = inp.broadcast_to(bshape)
     bshape[i]=ind.shape[i]
     ind = ind.broadcast_to(bshape)
-    # print(index)
-    # print(input)
-    # print()
-    # raise Exception
-    # print(i)
-    # print(ind)
-    # print(newnames)
     return torch.gather(inp,i,ind).rename(*newnames)
 
 def amax(t, dim:tuple[str]):
@@ -108,7 +109,7 @@ def unsqueeze_(t, dim, newname):
 
 
 def pad(input, pad, mode='constant', value=None):
-    return torch.nn.functional.pad(input.rename(None),pad,mode,value).rename(*input.names)
+    return torch.nn.functional.pad(input.rename(None),pad,mode,value=value).rename(*input.names)
 
 
 def repeat(x, sizes):
@@ -131,3 +132,22 @@ def flip(t,dims):
     names = t.names
     indices = [names.index(s) for s in dims]
     return torch.flip(t.rename(None),indices).rename(*names)
+
+
+def nanmax(tensor, dim=None, keepdim=False):
+    min_value = torch.finfo(tensor.dtype).min
+    output = tensor.nan_to_num(min_value)
+    if dim is None:
+        return torch.max(output)
+    else:
+        return torch.max(output,dim=dim,keepdim=keepdim)
+
+
+def nanmin(tensor, dim=None, keepdim=False):
+    max_value = torch.finfo(tensor.dtype).max
+    output = tensor.nan_to_num(max_value)
+    if dim is None:
+        return torch.min(output)
+    else:
+        return torch.min(output,dim=dim,keepdim=keepdim)
+
