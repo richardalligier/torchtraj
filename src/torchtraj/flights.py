@@ -47,6 +47,13 @@ class Flights:
 
     def dictparams(self):
         return {"xy0":self.xy0,"v":self.v,"theta":self.theta,"duration":self.duration,"turn_rate":self.turn_rate}
+    def serialize(self):
+        d = self.dictparams()
+        return self.deserialize,{k: named.serialize(v) for k,v in d.items()}
+    @classmethod
+    def deserialize(cls,d):
+        res = {k:v[0](v[1]) for k,v in d.items()}
+        return cls(**res)
 
     def check_names(f):
         # print("enterchecknames")
@@ -238,14 +245,14 @@ class Flights:
         c = vheading(self.theta)
         xy = c * dist.align_as(c)
         return self.xy0.align_as(xy) + torch.cumsum(xy,axis = xy.names.index(WPTS))
-    @classmethod
-    def cpu(cls, flights):
-        return cls(**{k:v.cpu() for k,v in flights.dictparams().items()})
-    @classmethod
-    def clone(cls, flights):
-        return cls(**{k:v.clone() for k,v in flights.dictparams().items()})
-    def to(self,device=None,dtype=None):
-        return self.dmap(self,f=lambda v:v.to(device=device,dtype=dtype))
+    # @classmethod
+    # def cpu(cls, flights):
+    #     return cls(**{k:v.cpu() for k,v in flights.dictparams().items()})
+    # @classmethod
+    # def clone(cls, flights):
+    #     return cls(**{k:v.clone() for k,v in flights.dictparams().items()})
+    # def to(self,device=None,dtype=None):
+    #     return self.dmap(self,f=lambda v:v.to(device=device,dtype=dtype))
     @classmethod
     def dmap(cls, flights,f):
         return cls(**{k:f(v) for k,v in flights.dictparams().items()})
@@ -279,6 +286,15 @@ class Flights:
         # print(duration)
         return cls(xy0,v,theta,duration,turn_rate)
 
+def add_tensors_operations(class_type):
+    def f(opname):
+        def f(self,*args,**kwargs):
+            return type(self)(**{k:getattr(v,opname)(*args,**kwargs) for k, v in self.dictparams().items()})
+        return f
+    for opname in ["cpu","to","clone"]:
+        setattr(class_type, opname, f(opname))
+
+add_tensors_operations(Flights)
 
 class FlightsWithAcc(Flights):
     def repeat_on_new_axis(self,ntimes,name):

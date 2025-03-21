@@ -1,6 +1,11 @@
 import torch
 
+def deserialize(d):
+    t,names = d
+    return t.rename(*names)
 
+def serialize(v):
+    return deserialize,(v.rename(None).cpu(),v.names)
 
 def broadcastshapes(s1,s2):
     m = min(len(s1),len(s2))
