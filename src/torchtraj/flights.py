@@ -193,7 +193,7 @@ class Flights:
         # print(v)
 
     def shift_xy0(self,t):
-        print(t,type(t))
+        # print(t,type(t))
         assert(isinstance(t,float))
         assert(t>=0.)
         dparam = {k:v.clone() for k,v in self.dictparams().items()}
