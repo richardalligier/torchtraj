@@ -65,17 +65,17 @@ class QhullDist:
             return xy.rename(*newnames),tuple(replaced)
         xy1,replaced1 = replacedims(xy1, "1")
         xy2,replaced2 = replacedims(xy2, "2")
-        dimsInSet = replaced1 + replaced2
-        def support(proj,dims):
-            return amaxnames(proj,dim=dims)#/np.sqrt(2.)
+        # dimsInSet = replaced1 + replaced2
+        # def support(proj,dims):
+        #     return amaxnames(proj,dim=dims)#/np.sqrt(2.)
         xy1 = xy1.refine_names(...,XY)
         xy2 = xy2.refine_names(...,XY)
         p1 = self.projection(xy1)
         p2 = self.projection(xy2)#.align_as(p1)
-        p1low = named.amin(p1,dim=replaced1) if len(replaced1) > 0 else p1
-        p1high = named.amax(p1,dim=replaced1) if len(replaced1) > 0 else p1
-        p2low = named.amin(p2,dim=replaced2) if len(replaced2) > 0 else p2
-        p2high = named.amax(p2,dim=replaced2) if len(replaced2) > 0 else p2
+        p1low = named.nanamin(p1,dim=replaced1) if len(replaced1) > 0 else p1
+        p1high = named.nanamax(p1,dim=replaced1) if len(replaced1) > 0 else p1
+        p2low = named.nanamin(p2,dim=replaced2) if len(replaced2) > 0 else p2
+        p2high = named.nanamax(p2,dim=replaced2) if len(replaced2) > 0 else p2
         d1 = p2low - p1high
         d2 = p1low - p2high
         assert d1.names==d2.names

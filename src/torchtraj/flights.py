@@ -24,6 +24,21 @@ def cat_lflights(lflights,dim=0):
     return lflights[0].from_argsdict(d)
 
 
+def named_cat_lflights(lflights,dimname):
+    t = type(lflights[0])
+    for f in lflights:
+        assert(t==type(f))
+    maxnwpts = max(f.nwpts() for f in lflights)
+    # res = []
+    # for f in lflights:
+    #     print(maxnwpts,f.nwpts())
+    #     print(f.duration.names,f.duration.shape)
+    #     res.append(f.pad_wpts_at_end(maxnwpts-f.nwpts()))
+    # lflights = res
+    lflights = [f.pad_wpts_at_end(maxnwpts-f.nwpts()) for f in lflights]
+    d = {k:named.cat([f.dictparams()[k] for f in lflights],dim=v.names.index(dimname)) for k,v in lflights[0].dictparams().items()}
+    return lflights[0].from_argsdict(d)
+
 
 def get_tstart(tend):
     return torch.cat([torch.zeros_like(tend[...,:1]),tend[...,:-1]],axis=-1)
@@ -108,8 +123,13 @@ class Flights:
         added_t = step_t * npad
         d["duration"][...,-1] = d["duration"][...,-1] - added_t
         for v in ["duration"]:
+            # print("duration",npad)
+            # print("orig",d[v].names,d[v].shape)
             d[v]=named.pad(d[v],(0,npad),mode="constant",value=0.)#added_t / npad * 0.5)
-            d[v][...,-npad:] = step_t.rename(None)
+            # print("pade",d[v].names,d[v].shape)
+            # raise Exception
+            # print("step",step_t.names,step_t.shape)
+            d[v][...,-npad:] = step_t.rename(None).unsqueeze(-1)
         durationaftersplit=d[v].cumsum(axis=-1)[...,-1]
         # print(self.duration.cumsum(axis=-1))
         # print(d["duration"].cumsum(axis=-1))
@@ -129,7 +149,7 @@ class Flights:
         tstart = get_tstart(tend)
         assert((tend-tstart).min()>0.)
         t = t.align_as(tend)
-        print(f"{t.shape=} {t.names=} {tend.shape=} {tend.names=}")
+        # print(f"{t.shape=} {t.names=} {tend.shape=} {tend.names=}")
         tshape = tuple(named.broadcastshapes(t.shape,tend.shape))
         tshape = tshape[:-1]+(1,)
         t = t.broadcast_to(tshape).clone()

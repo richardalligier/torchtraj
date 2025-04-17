@@ -12,7 +12,7 @@ def broadcastshapes(s1,s2):
     res = s1[:-m]+s2[:-m]
     s1 = s1[-m:]
     s2 = s2[-m:]
-    print("b",res,s1,s2)
+    # print("b",res,s1,s2)
     for a,b in zip(s1,s2):
         assert(a==b or a==1 or b==1)
         res += (max(a,b),)
@@ -86,6 +86,7 @@ def amax(t, dim:tuple[str]):
     assert len(res.shape)==len(newnames)
     return res.rename(*newnames)
 
+
 def amin(t, dim:tuple[str]):
     names = t.names
     intsdim = namestoints(t, dim)
@@ -97,6 +98,48 @@ def amin(t, dim:tuple[str]):
     # print(newnames)
     assert len(res.shape)==len(newnames)
     return res.rename(*newnames)
+
+
+
+
+def nanamax(tensor, dim:tuple[str]):
+    min_value = torch.finfo(tensor.dtype).min
+    out= torch.nan_to_num(tensor.rename(None),nan=min_value).rename(*tensor.names)
+    out = amax(out,dim)
+    outnames = out.names
+    out = out.rename(None)
+    out[out==min_value]= torch.nan
+    return out.rename(*outnames)
+
+
+def nanamin(tensor, dim:tuple[str]):
+    min_value = torch.finfo(tensor.dtype).max
+    out= torch.nan_to_num(tensor.rename(None),nan=min_value).rename(*tensor.names)
+    out = amin(out,dim)
+    outnames = out.names
+    out = out.rename(None)
+    out[out==min_value]= torch.nan
+    return out.rename(*outnames)
+
+
+
+# def nanamax(tensor, dim:tuple[str]):
+#     min_value = torch.finfo(tensor.dtype).min
+#     print(tensor.shape,tensor.names)
+#     tensor = torch.nan_to_num(tensor.rename(None),nan=min_value).rename(*tensor.names)
+#     print(tensor.shape,tensor.names)
+#     # raise Exception
+#     return amax(tensor,dim)
+
+
+# def nanamin(tensor, dim:tuple[str]):
+#     min_value = torch.finfo(tensor.dtype).max
+#     print(tensor.shape,tensor.names)
+#     tensor = torch.nan_to_num(tensor.rename(None),nan=min_value).rename(*tensor.names)
+#     print(tensor.shape,tensor.names)
+#     # raise Exception
+#     return amin(tensor,dim)
+
 
 def unsqueeze(t, dim, newname):
     if dim < 0:
