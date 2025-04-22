@@ -293,7 +293,20 @@ def changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f):
     dparams["v"] = f.v.align_to(*basename,WPTS)*(1+dspeed)#.align_as(*-1,wpts_start-1,wpts_end)
     return f.from_wpts(**dparams)
 
-
+def change_vertical_speed(vspeed,f):
+    assert(f.v.names[-1] == WPTS)
+    argstocheck = (vspeed,)
+    basename = compute_basename(f,*argstocheck)
+    dparams = f.dictparams()
+    vxy = dparams["v"] * dparams["theta"]
+    dparams["v"]= dparams["v"].align_to(*basename,WPTS) * vspeed.align_to(*basename,WPTS)
+    dparams["duration"]= dparams["duration"].align_to(*basename,WPTS) #/ vspeed.align_to(*basename,WPTS)
+    for k in ["turn_rate","theta"]:
+        dparams[k]=dparams[k].align_to(*basename,WPTS)
+    for k in ["xy0"]:
+        dparams[k]=dparams[k].align_to(*basename,XY)
+    # raise Exception
+    return f.from_argsdict(dparams)
 
 #change wpts de fin
 def changespeed_rotate(dspeed,wpts_start,wpts_turn,wpts_rejoin,f,beacon=None,contract=True):
