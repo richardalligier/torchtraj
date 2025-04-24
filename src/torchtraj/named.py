@@ -1,5 +1,59 @@
 import torch
 
+
+def transposewith0(x,name):
+    i = x.names.index(name)
+    newnames = list(x.names)
+    newnames[i],newnames[0]=newnames[0],newnames[i]
+    return torch.transpose(x.rename(None),0,i).rename(*newnames)
+
+
+def forward_fill(x: torch.Tensor,mask, dim: str) -> torch.Tensor:
+    # Move the fill dimension to the front
+    assert x.names==mask.names
+    names =x.names
+    x = x.rename(None)
+    mask = mask.rename(None)
+    dim = names.index(dim)
+    x_transposed = x.transpose(0, dim)
+    mask = mask.transpose(0,dim)
+    # Replace NaNs with 0 temporarily
+    x_filled = x_transposed.clone()
+    #x_filled[mask] = 0
+    # Create an indicator where valid values occur
+    valid = (~mask).to(x.dtype)
+    # Compute the cumulative sum of valid indicators
+    cumsum = valid.cumsum(dim=0)
+    # Avoid division by zero
+    # cumsum[cumsum == 0] = 1
+    cumsum = torch.where(cumsum == 0, torch.ones_like(cumsum),cumsum)
+    # Compute running max index
+    idx = torch.arange(x_transposed.size(0), device=x.device).unsqueeze(1)
+    idx = idx.expand(-1, x_transposed[0].numel()).reshape_as(x_transposed)
+    idx = torch.where(valid.bool(), idx, torch.zeros_like(idx))
+    idx = idx.cummax(dim=0).values
+    # Gather forward-filled values
+    flat_x = x_filled.reshape(x_transposed.size(0), -1)
+    flat_idx = idx.reshape(x_transposed.size(0), -1)
+    result = flat_x.gather(0, flat_idx)
+    # Reshape back and transpose to original dimension order
+    result = result.view_as(x_transposed)
+    return result.transpose(0, dim).rename(*names)
+
+
+# def flip(x,dims):
+#     return torch.flip(x.rename(None),dims=dims).rename(*x.names)
+
+def backward_fill(x: torch.Tensor,mask, dim: str) -> torch.Tensor:
+    # Flip along the fill dimension, apply forward fill, then flip back
+    flipped = flip(x, dims=[dim])
+    flipped_mask = flip(mask, dims=[dim])
+    # print(f"{flipped[45:]=}")
+    filled_flipped = forward_fill(flipped,flipped_mask, dim=dim)
+    # print(f"{filled_flipped[45:]=}")
+    return flip(filled_flipped, dims=[dim])
+
+
 def deserialize(d):
     t,names = d
     return t.rename(*names)
@@ -48,6 +102,15 @@ def align_common(*args):
 
 def namestoints(t,whichnames):
     return tuple(t.names.index(n) for n in whichnames)
+
+def where(condition,input,other):
+    l = [condition,input,other]
+    names = condition.names
+    for x in l:
+        assert(x.names==names)
+    res = torch.where(condition.rename(None),input.rename(None),other.rename(None))
+    return res.rename(*names)
+
 
 def sort(t,dim):
     names = t.names

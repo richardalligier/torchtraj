@@ -43,6 +43,14 @@ def named_cat_lflights(lflights,dimname):
 def get_tstart(tend):
     return torch.cat([torch.zeros_like(tend[...,:1]),tend[...,:-1]],axis=-1)
 
+
+def compute_twpts_with_wpts0(duration):
+    dates = duration.cumsum(axis=-1)
+    s=list(dates.shape)
+    s[-1]=1
+    t0 = torch.zeros(s,dtype=dates.dtype,device=dates.device).rename(*dates.names)
+    return named.cat([t0,dates],dim=-1)
+
 class Flights:
     # ncoords = 2
     def __init__(self,xy0,v,theta,duration,turn_rate):
@@ -265,6 +273,22 @@ class Flights:
         c = vheading(self.theta)
         xy = c * dist.align_as(c)
         return self.xy0.align_as(xy) + torch.cumsum(xy,axis = xy.names.index(WPTS))
+
+    def compute_twpts_with_wpts0(self):
+        return compute_twpts_with_wpts0(self.duration)
+        # dates = self.duration.cumsum(axis=-1)
+        # s=list(dates.shape)
+        # s[-1]=1
+        # t0 = torch.zeros(s,dtype=dates.dtype,device=dates.device).rename(*dates.names)
+        # return named.cat([t0,dates],dim=-1)
+
+    def compute_wpts_with_wpts0(self):
+        wpts = self.compute_wpts().align_to(...,WPTS,XY)
+        xy0 = self.xy0.align_as(wpts)
+        s=list(named.broadcastshapes(wpts.shape,xy0.shape))
+        s[-2]=1
+        xy0 = torch.broadcast_to(xy0,s)
+        return named.cat([xy0,wpts],dim=-2)
     # @classmethod
     # def cpu(cls, flights):
     #     return cls(**{k:v.cpu() for k,v in flights.dictparams().items()})
