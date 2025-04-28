@@ -1,6 +1,6 @@
 import torch
 from . import named,flights
-from .utils import WPTS, T, XY,vheading,repeat_on_new_axis
+from .utils import WPTS, T, XY,vheading,repeat_on_new_axis,compute_vxy
 import itertools
 import matplotlib.pyplot as plt
 import operator as op
@@ -321,14 +321,15 @@ def get_durations(duration,mask_cruise,mask_climb):
     print(start_cmb[45:])
     print(end_cmb[45:])
     print(dur_cmb[45:])
-    raise Exception
-    ffill_end = named.forward_fill(end_dates,end_dates==0,dim=WPTS)
-    bfill_start = named.backward_fill(start_dates,start_dates==0,dim=WPTS)
-    duration_cruise = (bfill_start-ffill_end) * torch.logical_not(mask_climb)
-    bfill_end = named.backward_fill(end_dates,end_dates==0,dim=WPTS)
-    ffill_start = named.forward_fill(start_dates,start_dates==0,dim=WPTS)
-    duration_climb = (bfill_end-ffill_start) * mask_climb
-    return duration_climb
+    return dur_crs,dur_cmb
+    # raise Exception
+    # ffill_end = named.forward_fill(end_dates,end_dates==0,dim=WPTS)
+    # bfill_start = named.backward_fill(start_dates,start_dates==0,dim=WPTS)
+    # duration_cruise = (bfill_start-ffill_end) * torch.logical_not(mask_climb)
+    # bfill_end = named.backward_fill(end_dates,end_dates==0,dim=WPTS)
+    # ffill_start = named.forward_fill(start_dates,start_dates==0,dim=WPTS)
+    # duration_climb = (bfill_end-ffill_start) * mask_climb
+    # return duration_climb
 
 
 # def change_vertical_speed(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
@@ -374,6 +375,13 @@ def get_durations(duration,mask_cruise,mask_climb):
 #     # raise Exception
 #     return f.from_argsdict(dparams)
 
+def scale_vspeed(dparams,scalez,iz):
+    vxy = compute_vxy(v=dparams["v"],theta=dparams["theta"])
+    vxy[...,iz] = vxy[...,iz] * scalez
+    dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
+    dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
+    dparams["duration"] = dparams["duration"].align_as(scalez)/scalez
+
 def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     assert(iz==0 or iz==1)
     it = 1-iz
@@ -386,8 +394,9 @@ def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     twpts = twpts0[...,:-1]
     # print(twpts)
     # raise Exception
-    v = dparams["v"].align_as(dvspeed) * torch.ones_like(dvspeed)
-    vxy = v.align_to(*basename,WPTS,XY) * vheading(dparams["theta"]).align_to(*basename,WPTS,XY)
+    dparams["v"] = dparams["v"].align_as(dvspeed) * torch.ones_like(dvspeed)
+    dparams["theta"]= dparams["theta"].align_to(*basename,WPTS)
+    vxy = compute_vxy(v=dparams["v"],theta=dparams["theta"])
     maskz = torch.abs(vxy[...,iz]) > thresh_rocd
     # raise Exception
     maskt =tmin.align_as(maskz)<=twpts.align_as(maskz)
@@ -395,22 +404,25 @@ def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     mask_climb = torch.logical_and(maskt,maskz)
     mask_cruise = torch.logical_and(maskt,~maskz)
     scalez = named.where(mask_climb, dvspeed.align_to(*basename,WPTS),torch.ones_like(dvspeed))
-    vxy[...,iz] = vxy[...,iz] * scalez
-    dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
-    dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
     duration_cruise,duration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_cruise,mask_climb)
-    dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) / scalez
+    scale_vspeed(dparams,scalez,iz)
+    # vxy[...,iz] = vxy[...,iz] * scalez
+    # dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
+    # dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
+    # dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) / scalez
     mduration_cruise,mduration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_cruise,mask_climb)
     modif_climb = mduration_climb - duration_climb
-    modif_cruise = (duration_cruise - named.forward_fill(modif_climb,mask_climb,dim=WPTS))*mask_cruise
-    scale_c = named.where(mask_cruise,modif_cruise / duration_cruise,torch.ones_like(modif_cruise))
-    dparams["duration"]=dparams["duration"]*scale_c
-    print(mduration_climb[45:])
-    print(duration_climb[45:])
-    print(mduration_cruise[45:])
-    print(duration_cruise[45:])
+    modif_cruise = ( duration_cruise- named.backward_fill(modif_climb,mask_cruise,dim=WPTS))#*mask_cruise
+    scale_c = named.where(mask_cruise, duration_cruise/modif_cruise ,torch.ones_like(modif_cruise))
+    scale_vspeed(dparams,scale_c,iz)
+    # print(modif_climb[45:])
     # print(modif_cruise[45:])
     # print(scale_c[45:])
+    print(modif_climb[43:44])
+    print(modif_cruise[43:44])
+    print(mask_cruise[43:44])
+    print(mask_climb[43:44])
+    print(scale_c[43:44])
     # raise Exception
     for k in ["turn_rate","theta"]:
         dparams[k]=dparams[k].align_to(*basename,WPTS)
@@ -419,49 +431,49 @@ def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     # raise Exception
     return f.from_argsdict(dparams)
 
-def change_vertical_speed_bwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
-    assert(iz==0 or iz==1)
-    it = 1-iz
-    assert(f.v.names[-1] == WPTS)
-    argstocheck = (dvspeed,)
-    basename = compute_basename(f,*argstocheck)
-    dparams = f.dictparams()
-    dvspeed = dvspeed.align_to(*basename,WPTS)
-    twpts0 = f.compute_twpts_with_wpts0().align_to(...,WPTS)
-    twpts = twpts0[...,:-1]
-    # print(twpts)
-    # raise Exception
-    v = dparams["v"].align_as(dvspeed) * torch.ones_like(dvspeed)
-    vxy = v.align_to(*basename,WPTS,XY) * vheading(dparams["theta"]).align_to(*basename,WPTS,XY)
-    maskz = torch.abs(vxy[...,iz]) > thresh_rocd
-    # raise Exception
-    maskt =tmin.align_as(maskz)<=twpts.align_as(maskz)
-    maskt = torch.logical_and(maskt,twpts.align_as(maskz)<tmax.align_as(maskz))
-    mask_climb = torch.logical_and(maskt,maskz)
-    mask_cruise = torch.logical_and(maskt,~maskz)
-    scalez = named.where(mask_climb, dvspeed.align_to(*basename,WPTS),torch.ones_like(dvspeed))
-    vxy[...,iz] = vxy[...,iz] * scalez
-    dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
-    dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
-    duration_cruise,duration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_climb)
-    dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) / scalez
-    mduration_cruise,mduration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_climb)
-    modif_climb = mduration_climb - duration_climb
-    modif_cruise = (duration_cruise - named.backward_fill(modif_climb,mask_climb,dim=WPTS))*mask_cruise
-    scale_c = named.where(mask_cruise,modif_cruise / duration_cruise,torch.ones_like(modif_cruise))
-    dparams["duration"]=dparams["duration"]*scale_c
-    print(mduration_climb[45:])
-    print(duration_climb[45:])
-    print(mduration_cruise[45:])
-    print(duration_cruise[45:])
-    print(modif_cruise[45:])
-    # raise Exception
-    for k in ["turn_rate","theta"]:
-        dparams[k]=dparams[k].align_to(*basename,WPTS)
-    for k in ["xy0"]:
-        dparams[k]=dparams[k].align_to(*basename,XY)
-    # raise Exception
-    return f.from_argsdict(dparams)
+# def change_vertical_speed_bwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
+#     assert(iz==0 or iz==1)
+#     it = 1-iz
+#     assert(f.v.names[-1] == WPTS)
+#     argstocheck = (dvspeed,)
+#     basename = compute_basename(f,*argstocheck)
+#     dparams = f.dictparams()
+#     dvspeed = dvspeed.align_to(*basename,WPTS)
+#     twpts0 = f.compute_twpts_with_wpts0().align_to(...,WPTS)
+#     twpts = twpts0[...,:-1]
+#     # print(twpts)
+#     # raise Exception
+#     v = dparams["v"].align_as(dvspeed) * torch.ones_like(dvspeed)
+#     vxy = v.align_to(*basename,WPTS,XY) * vheading(dparams["theta"]).align_to(*basename,WPTS,XY)
+#     maskz = torch.abs(vxy[...,iz]) > thresh_rocd
+#     # raise Exception
+#     maskt =tmin.align_as(maskz)<=twpts.align_as(maskz)
+#     maskt = torch.logical_and(maskt,twpts.align_as(maskz)<tmax.align_as(maskz))
+#     mask_climb = torch.logical_and(maskt,maskz)
+#     mask_cruise = torch.logical_and(maskt,~maskz)
+#     scalez = named.where(mask_climb, dvspeed.align_to(*basename,WPTS),torch.ones_like(dvspeed))
+#     vxy[...,iz] = vxy[...,iz] * scalez
+#     dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
+#     dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
+#     duration_cruise,duration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_climb)
+#     dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) / scalez
+#     mduration_cruise,mduration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_climb)
+#     modif_climb = mduration_climb - duration_climb
+#     modif_cruise = (duration_cruise - named.backward_fill(modif_climb,mask_climb,dim=WPTS))*mask_cruise
+#     scale_c = named.where(mask_cruise,modif_cruise / duration_cruise,torch.ones_like(modif_cruise))
+#     dparams["duration"]=dparams["duration"]*scale_c
+#     # print(mduration_climb[45:])
+#     # print(duration_climb[45:])
+#     # print(mduration_cruise[45:])
+#     # print(duration_cruise[45:])
+#     # print(modif_cruise[45:])
+#     # # raise Exception
+#     for k in ["turn_rate","theta"]:
+#         dparams[k]=dparams[k].align_to(*basename,WPTS)
+#     for k in ["xy0"]:
+#         dparams[k]=dparams[k].align_to(*basename,XY)
+#     # raise Exception
+#     return f.from_argsdict(dparams)
 
 
 

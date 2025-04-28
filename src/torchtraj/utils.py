@@ -17,3 +17,7 @@ def vheading(theta):
     cx = torch.cos(theta)
     cy = torch.sin(theta)
     return torch.cat([named.unsqueeze(vd,-1,XY) for vd in (cx,cy)],-1)
+
+def compute_vxy(v,theta):
+    vh = vheading(theta)
+    return v.align_as(vh)*vh
