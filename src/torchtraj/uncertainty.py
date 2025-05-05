@@ -383,6 +383,7 @@ def scale_vspeed(dparams,scalez,iz):
     dparams["duration"] = dparams["duration"].align_as(scalez)/scalez
 
 def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
+    forward = True
     assert(iz==0 or iz==1)
     it = 1-iz
     assert(f.v.names[-1] == WPTS)
@@ -412,17 +413,56 @@ def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     # dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) / scalez
     mduration_cruise,mduration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_cruise,mask_climb)
     modif_climb = mduration_climb - duration_climb
-    modif_cruise = ( duration_cruise- named.backward_fill(modif_climb,mask_cruise,dim=WPTS))#*mask_cruise
+    if forward:
+        modif_cruise = ( duration_cruise- named.forward_fill(modif_climb,mask_cruise,dim=WPTS))*mask_cruise
+        # print(modif_cruise.min()>=0.)
+    else:
+        modif_cruise = ( duration_cruise- named.backward_fill(modif_climb,mask_cruise,dim=WPTS))*mask_cruise
+        print(modif_cruise.min())
+        # raise Exception
     scale_c = named.where(mask_cruise, duration_cruise/modif_cruise ,torch.ones_like(modif_cruise))
+    print(scale_c.names)
+    v = scale_c.rename(None)
+    l=[]
+    for i,n in enumerate(scale_c.names):
+        print(n)
+        v,ind=torch.min(v,dim=0)
+        l.append(ind)
+        print(v)
+        print(ind)
+    print(l)
+    s=slice(0,1)
+    print(modif_climb[s])
+    print(modif_cruise[s])
+    print(mask_cruise[s])
+    print(mask_climb[s])
+    print(scale_c[s])
+    print(maskt[s])
+    print(maskz[s])
+    raise Exception
+    print(scale_c.min(),scale_c.max())
+    assert(scale_c.max()<10000.)
+    assert(scale_c.min()>0.)
+    # s=slice(29,30)
+    # print(scale_c[s])
+    # print(scale_c.names)
+    # print(scale_c.shape)
+    # raise Exception
     scale_vspeed(dparams,scale_c,iz)
-    # print(modif_climb[45:])
-    # print(modif_cruise[45:])
-    # print(scale_c[45:])
-    print(modif_climb[43:44])
-    print(modif_cruise[43:44])
-    print(mask_cruise[43:44])
-    print(mask_climb[43:44])
-    print(scale_c[43:44])
+    # print(modif_climb[43:44])
+    # print(modif_cruise[43:44])
+    # print(mask_cruise[43:44])
+    # print(mask_climb[43:44])
+    # print(scale_c[43:44])
+    # s=slice(45,46)
+
+    # print(modif_climb[s])
+    # print(modif_cruise[s])
+    # print(mask_cruise[s])
+    # print(mask_climb[s])
+    # print(scale_c[s])
+    # print(maskt[s])
+    # print(maskz[s])
     # raise Exception
     for k in ["turn_rate","theta"]:
         dparams[k]=dparams[k].align_to(*basename,WPTS)
@@ -431,6 +471,43 @@ def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     # raise Exception
     return f.from_argsdict(dparams)
 
+def reverse(dparams):
+    d={}
+    for k,v in dparams.items():
+        v=v.clone()
+        if WPTS in v.names:
+            print(k,v.names)
+            d[k]=named.flip(v,dims=[WPTS])
+        else:
+            d[k]=v
+    return d
+
+def change_vertical_speed_bwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
+    # not working properly s = slice(29,30) python3 add_uncertainty.py -situation ./situations/38930310_1657885467_1657885501.situation -wpts z
+    it = 1 - iz
+    assert(f.duration.names[-1]==WPTS)
+    last_wpt = torch.sum(f.duration,dim=-1)
+    frev = f.from_argsdict(reverse(f.dictparams()))
+    btmin = last_wpt-tmax
+    btmax = last_wpt-tmin
+    fr = change_vertical_speed_fwd(dvspeed,btmin,btmax,frev,thresh_rocd,iz)
+    return fr
+    twpts = fr.compute_twpts_with_wpts0()
+    assert(twpts.names[-1]==WPTS)
+    twpts = torch.clip(twpts,max=last_wpt.align_as(twpts))
+    wpts0_rev = frev.compute_wpts().align_to(...,WPTS,XY)[...,-1,:]
+    wpts0_changed = fr.compute_wpts().align_to(...,WPTS,XY)[...,-1,:]
+    delta_wpts0 = wpts0_changed - wpts0_rev.align_as(wpts0_changed)
+    dparams = fr.dictparams()
+    dparams["duration"]=twpts[...,1:]-twpts[...,:-1]
+    # print(wpts0_rev)
+    print(fr.v)
+    print(fr.duration)
+    # print(wpts0_changed)
+    # print(delta_wpts0)
+    raise Exception
+    dparams["xy0"] = dparams["xy0"].align_as(delta_wpts0) - delta_wpts0
+    return f.from_argsdict(reverse(dparams))
 # def change_vertical_speed_bwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
 #     assert(iz==0 or iz==1)
 #     it = 1-iz

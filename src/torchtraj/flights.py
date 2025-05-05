@@ -61,6 +61,7 @@ class Flights:
         self.turn_rate = turn_rate
         self.check_names()
         assert(v.min()>0)
+        # assert(duration.min()>=0)
 
         # self.xy0 = xy0.rename(None)
         # self.v = v.rename(None)
