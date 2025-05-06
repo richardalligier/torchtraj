@@ -21,3 +21,7 @@ def vheading(theta):
 def compute_vxy(v,theta):
     vh = vheading(theta)
     return v.align_as(vh)*vh
+
+
+def apply_mask(res,mask):
+    return res * mask.align_as(res)
