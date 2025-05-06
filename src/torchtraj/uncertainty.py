@@ -357,6 +357,25 @@ def get_dates(twpts,mask_climb):
     duration = (end_bfill-start_ffill)*mask_climb
     return start_dates,end_dates,duration
 
+
+def get_start_seg(twpts,mask_climb):
+    start_cmb = mask_climb.clone()
+    start_cmb[...,1:] = torch.logical_and(mask_climb[...,1:],torch.logical_not(mask_climb[...,:-1]))#torch.logical_and(mask_cruise[...,:-1],mask_climb[...,1:])
+    #start_cmb = named.cat([start_cmb,torch.ones_like(start_cmb[...,:1])],dim=-1)
+    start_dates = start_cmb*twpts[...,:-1].align_as(start_cmb)
+    return start_dates
+
+def get_end_seg(twpts,mask_climb):
+    end_cmb = mask_climb.clone()
+    end_cmb[...,:-1] = torch.logical_and(mask_climb[...,:-1],torch.logical_not(mask_climb[...,1:]))
+    end_dates = end_cmb*twpts[...,1:].align_as(end_cmb)
+    return end_dates
+def fill_diff_mask(a,b,mask):
+    a_bfill = named.backward_fill(a,mask,dim=WPTS)
+    b_ffill = named.forward_fill(b,mask,dim=WPTS)
+    return (a_bfill-b_ffill)*mask
+    # return start_dates,end_dates,duration
+
 def get_durations(duration,mask_cruise,mask_climb):
     twpts = flights.compute_twpts_with_wpts0(duration).align_to(...,WPTS)#[...,:-1]
     start_cmb,end_cmb,dur_cmb = get_dates(twpts,mask_climb)
@@ -419,12 +438,21 @@ def change_vertical_speed_new_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     mask_clmb = torch.logical_and(maskt,vz >  thresh_rocd)
     mask_desc = torch.logical_and(maskt,vz < -thresh_rocd)
     mask_cruise = torch.logical_and(maskt,torch.logical_and(~mask_desc,~mask_clmb))
-    print(z.names)
-    print(mask_desc.names)
-    print(get_dates(z,mask_desc)[0])
-    print(get_dates(z,mask_desc)[1])
-    print(get_dates(z,mask_desc)[2])
-    print(get_dates(twpts0,mask_desc)[2])
+    m = mask_desc
+    startt_clmb = get_start_seg(twpts0,m)
+    endt_clmb = get_end_seg(twpts0, m)
+    endt_clmb = get_end_seg(endt_clmb, torch.logical_or(m, mask_cruise))
+    print(fill_diff_mask(endt_clmb,startt_clmb,torch.logical_or(m, mask_cruise)))
+    print(startt_clmb)
+    print(endt_clmb)
+    raise Exception
+    # print(z.names)
+    # print(mask_desc.names)
+    # print(get_dates(z,mask_desc)[0])
+    # print(get_dates(z,mask_desc)[1])
+    # print(get_dates(z,mask_desc)[2])
+    # print(get_dates(twpts0,mask_desc)[2])
+    # print(get_dates(twpts0,torch.logical_or(mask_desc,mask_cruise))[2])
     # print(apply_mask(zend,mask_desc))
     # print(apply_mask(zst,mask_clmb))
     # print(get_dates(z,mask_cruise)[0])
