@@ -51,7 +51,7 @@ def zero_pad(dxy,wpts_start,wpts_end):
     bshape = named.broadcastshapes(bshape,wpts_end.align_as(dxy).shape)
     # print(bshape)
     # raise Exception
-    print(iwpts,dxy.shape)
+    # print(iwpts,dxy.shape)
     assert(dxy.shape[iwpts]>1)
     dxy = dxy.broadcast_to(bshape).clone()
     # dxy = dxy.clone()
@@ -165,7 +165,7 @@ def _contract(f,fref,wpts_start,wpts_end,beacon=None):
     wptsref = fref.compute_wpts()
     distfref = compute_distance_start_beacon(wptsref,wpts_start,beacon)
     ratio = distf.align_to(*basename) / distfref.align_to(*basename)
-    print(f"{ratio=}")
+    # print(f"{ratio=}")
     xy = wpts
     xy_zero = gather_wpts(xy,wpts_start)
     # print(f"{ratio=}")
@@ -220,9 +220,9 @@ def adddt_rotate(dt,wpts_start,wpts_turn,wpts_end,f, contract=True,beacon=None):
     wpts = f.compute_wpts()
     if beacon is None:
         beacon = gather_wpts(wpts,wpts_end-1)
-        print(f"{beacon=}")
+        # print(f"{beacon=}")
     newtheta = compute_theta_start_beacon(newwpts,wpts_turn,beacon).align_to(*basename)
-    print(f"{newtheta.names=}  {newtheta.shape=}")
+    # print(f"{newtheta.names=}  {newtheta.shape=}")
     oldtheta = compute_theta_start_beacon(wpts,wpts_turn,beacon).align_to(*basename) #+ dtheta.align_to(*basename)
     newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_end+1,newf)
     return _contract(newf,f,wpts_turn,wpts_end+1,beacon=beacon) if contract else newf
@@ -276,12 +276,12 @@ def changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f):
     newmeanv = (dspeed.align_as(velocity)-1)*velocity
     dxy = newmeanv * f.duration.align_as(newmeanv)
     assert(dxy.names[-2] == WPTS)
-    print(f"{dxy.names=} {dxy.shape=}")
-    print(dxy)
+    # print(f"{dxy.names=} {dxy.shape=}")
+    # print(dxy)
     dxy = zero_pad(dxy,wpts_start-1,wpts_turn)
     dxy = torch.cumsum(dxy,axis=-2)
     dxy = zero_pad(dxy,wpts_start-1,wpts_rejoin)
-    print(dxy)
+    # print(dxy)
     # raise Exception
     dspeed = dspeed.align_to(*basename,WPTS)
     dspeeds = list(dspeed.shape)
@@ -949,13 +949,14 @@ def changespeed_rotate(dspeed,wpts_start,wpts_turn,wpts_rejoin,f,beacon=None,con
     argstocheck = (dspeed,wpts_start,wpts_turn,wpts_rejoin)
     basename = compute_basename(f,*argstocheck)
     newf = changespeed(dspeed,wpts_start,wpts_turn,wpts_rejoin,f)
+    # raise Exception
     newwpts = newf.compute_wpts()
     wpts = f.compute_wpts()
     if beacon is None:
         beacon = gather_wpts(wpts,wpts_rejoin-1)
-        print(f"{beacon=}")
+        # print(f"{beacon=}")
     newtheta = compute_theta_start_beacon(newwpts,wpts_turn,beacon).align_to(*basename)
-    print(f"{newtheta.names=}  {newtheta.shape=}")
+    # print(f"{newtheta.names=}  {newtheta.shape=}")
     oldtheta = compute_theta_start_beacon(wpts,wpts_turn,beacon).align_to(*basename) #+ dtheta.align_to(*basename)
     newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_rejoin+1,newf)
     return _contract(newf,f,wpts_turn,wpts_rejoin+1,beacon=beacon) if contract else newf
@@ -983,9 +984,9 @@ def addangle(dtheta,wpts_start,wpts_turn,wpts_rejoin,f,beacon=None, contract=Tru
     wpts = f.compute_wpts()
     if beacon is None:
         beacon = gather_wpts(wpts,wpts_rejoin-1)
-        print(f"compute beacon {beacon}")
+        # print(f"compute beacon {beacon}")
     newtheta = compute_theta_start_beacon(newwpts,wpts_turn,beacon=beacon).align_to(*basename)
-    print(f"{newtheta.names=}  {newtheta.shape=}")
+    # print(f"{newtheta.names=}  {newtheta.shape=}")
     oldtheta = compute_theta_start_beacon(wpts,wpts_turn,beacon=beacon).align_to(*basename) + dtheta.align_to(*basename)
     newf = rotate_wpts(newtheta-oldtheta,wpts_turn,wpts_rejoin+1,newf)
     return _contract(newf,f,wpts_turn,wpts_rejoin+1,beacon=beacon) if contract else newf
@@ -1012,7 +1013,7 @@ def rotate_wpts(dtheta,wpts_start,wpts_end,f):
     points between wpts_start excluded to wpts_end excluded are only "rotated"
     wpts_end unchanged
     '''
-    print(f"{wpts_start=} {wpts_end=}")
+    # print(f"{wpts_start=} {wpts_end=}")
     basename = compute_basename(f,dtheta,wpts_start,wpts_end)
     newtheta = f.theta.align_to(*basename,WPTS) + dtheta.align_to(*basename,WPTS)
     newvheading = vheading(newtheta)
