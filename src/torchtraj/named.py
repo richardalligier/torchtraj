@@ -93,6 +93,12 @@ def maximum(input,other):
     names = input.names
     return torch.maximum(input.rename(None),other.rename(None)).rename(*names)
 
+
+def minimum(input,other):
+    assert(input.names==other.names)
+    names = input.names
+    return torch.minimum(input.rename(None),other.rename(None)).rename(*names)
+
 def align(x,y,names):
     return x.align_to(*names),y.align_to(*names)
 

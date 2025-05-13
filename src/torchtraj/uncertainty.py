@@ -358,23 +358,7 @@ def get_dates(twpts,mask_climb):
     return start_dates,end_dates,duration
 
 
-def get_start_seg(twpts,mask_climb):
-    start_cmb = mask_climb.clone()
-    start_cmb[...,1:] = torch.logical_and(mask_climb[...,1:],torch.logical_not(mask_climb[...,:-1]))#torch.logical_and(mask_cruise[...,:-1],mask_climb[...,1:])
-    #start_cmb = named.cat([start_cmb,torch.ones_like(start_cmb[...,:1])],dim=-1)
-    start_dates = start_cmb*twpts[...,:-1].align_as(start_cmb)
-    return start_dates
 
-def get_end_seg(twpts,mask_climb):
-    end_cmb = mask_climb.clone()
-    end_cmb[...,:-1] = torch.logical_and(mask_climb[...,:-1],torch.logical_not(mask_climb[...,1:]))
-    end_dates = end_cmb*twpts[...,1:].align_as(end_cmb)
-    return end_dates
-def fill_diff_mask(a,b,mask):
-    a_bfill = named.backward_fill(a,mask,dim=WPTS)
-    b_ffill = named.forward_fill(b,mask,dim=WPTS)
-    return (a_bfill-b_ffill)*mask
-    # return start_dates,end_dates,duration
 
 def get_durations(duration,mask_cruise,mask_climb):
     twpts = flights.compute_twpts_with_wpts0(duration).align_to(...,WPTS)#[...,:-1]
@@ -414,7 +398,26 @@ def scale_only_vspeed(dparams,scalez,iz):
     dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
     dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
 
-def change_vertical_speed_new_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
+
+
+def get_start_seg(twpts,mask_climb):
+    start_cmb = mask_climb.clone()
+    start_cmb[...,1:] = torch.logical_and(mask_climb[...,1:],torch.logical_not(mask_climb[...,:-1]))#torch.logical_and(mask_cruise[...,:-1],mask_climb[...,1:])
+    #start_cmb = named.cat([start_cmb,torch.ones_like(start_cmb[...,:1])],dim=-1)
+    start_dates = start_cmb*twpts[...,:-1].align_as(start_cmb)
+    return start_dates
+
+def get_end_seg(twpts,mask_climb):
+    end_cmb = mask_climb.clone()
+    end_cmb[...,:-1] = torch.logical_and(mask_climb[...,:-1],torch.logical_not(mask_climb[...,1:]))
+    end_dates = end_cmb*twpts[...,1:].align_as(end_cmb)
+    return end_dates
+def fill_diff(a,b):
+    a_bfill = named.backward_fill(a,a==0.,dim=WPTS)
+    b_ffill = named.forward_fill(b,b==0.,dim=WPTS)
+    return (a_bfill-b_ffill)
+
+def change_vertical_speed_newold_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     assert(iz==0 or iz==1)
     it = 1-iz
     assert(f.v.names[-1] == WPTS)
@@ -427,7 +430,8 @@ def change_vertical_speed_new_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     # print(twpts)
     # raise Exception
     vz = compute_vxy(v=dparams["v"],theta=dparams["theta"])[...,iz]
-    dparams["v"] = dparams["v"].align_as(dvspeed) * torch.ones_like(dvspeed)
+    dparams["v"] = dparams["v"].align_as(dvspeed) #* torch.ones_like(dvspeed)
+    dparams["duration"] = dparams["duration"].align_as(dvspeed)
     dparams["theta"] = dparams["theta"].align_to(*basename,WPTS)
     newdparams = dparams.copy()
 
@@ -437,14 +441,59 @@ def change_vertical_speed_new_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     maskt = tmin.align_as(vz)<=twpts.align_as(vz)
     mask_clmb = torch.logical_and(maskt,vz >  thresh_rocd)
     mask_desc = torch.logical_and(maskt,vz < -thresh_rocd)
-    mask_cruise = torch.logical_and(maskt,torch.logical_and(~mask_desc,~mask_clmb))
-    m = mask_desc
-    startt_clmb = get_start_seg(twpts0,m)
-    endt_clmb = get_end_seg(twpts0, m)
-    endt_clmb = get_end_seg(endt_clmb, torch.logical_or(m, mask_cruise))
-    print(fill_diff_mask(endt_clmb,startt_clmb,torch.logical_or(m, mask_cruise)))
+    mask_crse = torch.logical_and(maskt,torch.logical_and(~mask_desc,~mask_clmb))
+    startt_clmb = get_start_seg(twpts0,mask_clmb)
+    endt_clmb = get_end_seg(twpts0,mask_clmb)
+    startt_desc = get_start_seg(twpts0,mask_desc)
+    endt_desc = get_end_seg(twpts0, mask_desc)
+    startt_crse = get_start_seg(twpts0,mask_crse)
+    endt_crse = get_end_seg(twpts0, mask_crse)
+    print(startt_desc)
+    print(endt_desc)
     print(startt_clmb)
-    print(endt_clmb)
+    # print(endt_crs)
+    # print(endt_clmb)
+    duration_seg_desc = fill_diff(endt_desc,startt_desc)*mask_desc
+    duration_seg_clmb = fill_diff(endt_clmb,startt_clmb)*mask_clmb
+    duration_seg_crse = fill_diff(endt_crse,startt_crse)*mask_crse
+    duration_seg = duration_seg_desc + duration_seg_clmb + duration_seg_crse
+
+    startz_clmb = get_start_seg(z,mask_clmb)
+    endz_clmb = get_end_seg(z,mask_clmb)
+    startz_desc = get_start_seg(z,mask_desc)
+    endz_desc = get_end_seg(z, mask_desc)
+    startz_crse = get_start_seg(z,mask_crse)
+    endz_crse = get_end_seg(z, mask_crse)
+    alt_seg_desc = fill_diff(endz_desc,startz_desc)*mask_desc
+    alt_seg_clmb = fill_diff(endz_clmb,startz_clmb)*mask_clmb
+    alt_seg_crse = fill_diff(endz_crse,startz_crse)*mask_crse
+    print(dparams["duration"])
+    print(z)
+    print(alt_seg_desc)
+    print(startz_desc)
+    print(endz_desc)
+    raise Exception
+    duration_seg_desc_max = named.maximum(fill_diff(endt_crse+startt_clmb,startt_desc)*mask_desc,duration_seg_desc)
+    target_duration_seg_desc = duration_seg_desc.align_as(dvspeed) / dvspeed#.align_as(duration_desc)
+    # actual_target_duration = named.minimum(target_duration,duration_desc_max.align_as(dvspeed))
+    print(target_duration_seg_desc)
+    raise Exception
+    dalt = dparams["duration"] * vz.align_as(dparams["duration"])
+    new_target_duration = dparams["duration"] * target_duration / now_duration.align_as(target_duration)
+    scale = named.where(mask_desc, dvspeed.align_to(*basename,WPTS),torch.ones_like(dvspeed))
+    ratio = actual_target_duration / now_duration.align_as(target_duration)
+    new_actual_target_duration = dparams["duration"] 
+    print(dparams["duration"])
+    print(new_target_duration)
+    print(new_actual_target_duration)
+    raise Exception
+    actual_diff_alt = actual_duration * vz.align_as(dparams["duration"]) * dvspeed
+    diff_duration = target_duration - actual_duration
+    print(target_duration)
+    print(actual_duration)
+    print(diff_duration)
+    print(diff_alt)
+    print(actual_diff_alt)
     raise Exception
     # print(z.names)
     # print(mask_desc.names)
@@ -484,7 +533,234 @@ def change_vertical_speed_new_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     raise Exception
 
 
-def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
+# _seg = extended on whole climb/cuise segment
+# s_ = start date
+# e_ = end date
+def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1,min_cruise=1e-1):
+    assert(iz==0 or iz==1)
+    it = 1-iz
+    assert(f.v.names[-1] == WPTS)
+    argstocheck = (dvspeed,)
+    basename = compute_basename(f,*argstocheck)
+    dparams = f.dictparams()
+    dvspeed = dvspeed.align_to(*basename,WPTS)
+    twpts0 = f.compute_twpts_with_wpts0().align_to(...,WPTS)
+    twpts = twpts0[...,:-1]
+    # print(twpts)
+    # raise Exception
+    dparams["v"] = dparams["v"].align_as(dvspeed) * torch.ones_like(dvspeed)
+    dparams["theta"]= dparams["theta"].align_to(*basename,WPTS)
+    vxy = compute_vxy(v=dparams["v"],theta=dparams["theta"])
+    maskz = torch.abs(vxy[...,iz]) > thresh_rocd
+    # raise Exception
+    maskt =tmin.align_as(maskz)<=twpts.align_as(maskz)
+    maskt = torch.logical_and(maskt,twpts.align_as(maskz)<tmax.align_as(maskz))
+    mask_clmb = torch.logical_and(maskt,maskz)
+    mask_crse = torch.logical_and(maskt,~maskz)
+    scalez = named.where(mask_clmb, dvspeed.align_to(*basename,WPTS),torch.ones_like(dvspeed))
+    duration_cruise,duration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_crse,mask_clmb)
+    # print(compute_vxy(v=dparams["v"],theta=dparams["theta"])[...,iz])
+    # print(dparams["duration"])
+    scale_vspeed(dparams,scalez,iz)
+    # vxy[...,iz] = vxy[...,iz] * scalez
+    # dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
+    # dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
+    # dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) / scalez
+    mduration_cruise,mduration_climb = get_durations(dparams["duration"].align_to(*basename,WPTS),mask_crse,mask_clmb)
+    # modif_climb = mduration_climb - duration_climb
+    # modif_cruise = ( duration_cruise- named.forward_fill(modif_climb,mask_cruise,dim=WPTS))*mask_cruise
+    s_clmb = get_start_seg(twpts0,mask_clmb)
+    e_clmb = get_end_seg(twpts0,mask_clmb)
+    s_crse = get_start_seg(twpts0,mask_crse)
+    e_crse = get_end_seg(twpts0,mask_crse)
+    def s_seg(s,mask):
+        return named.forward_fill(s,s==0.,dim=WPTS)*mask
+    def e_seg(e,mask):
+        return named.backward_fill(e,e==0.,dim=WPTS)*mask
+    def clmb_shift_right(v):
+        return named.forward_fill(named.forward_fill(v,mask_crse,dim=WPTS)*mask_crse,mask_clmb,dim=WPTS)*mask_clmb
+    # def clmb_shift_left(v):
+    #     return named.backward_fill(named.backward_fill(v,mask_crse,dim=WPTS)*mask_crse,mask_clmb,dim=WPTS)*mask_clmb
+    def iter_clmb(s_clmb_seg):
+        # print(s_clmb)
+        # print(duration_climb)
+        # print(e_clmb)
+        # raise Exception
+        # s_clmb_seg = s_seg(s_clmb,mask_clmb)
+        new_e_clmb_seg = s_clmb_seg+mduration_climb
+        new_e_clmb_seg_fwd = clmb_shift_right(new_e_clmb_seg)
+        new_s_clmb_seg = named.maximum(s_clmb_seg,new_e_clmb_seg_fwd+min_cruise*(new_e_clmb_seg_fwd!=0.))#*(s_clmb!=0.)
+        # new_e_clmb_seg = new_s_clmb_seg + mduration_climb
+        # print(s_clmb)
+        # print(e_clmb)
+        # print(new_e_clmb_ext)
+        # print(new_s_clmb)
+        # print(new_e_clmb)
+        # print(mask_crse)
+        # raise Exception
+        return new_s_clmb_seg#,new_e_clmb
+    new_s_clmb_seg = s_seg(s_clmb,mask_clmb)
+    for i in range(10):#s_clmb.shape[-1]):
+        new_s_clmb_seg = iter_clmb(new_s_clmb_seg)
+    new_s_clmb = new_s_clmb_seg * (s_clmb!=0.)
+    new_e_clmb_seg = new_s_clmb_seg + mduration_climb
+    new_e_clmb = new_e_clmb_seg * (e_clmb!=0.)
+    s_crse_seg = s_seg(s_crse,mask_crse)
+    e_crse_seg = e_seg(e_crse,mask_crse)
+    new_s_crse_seg = named.forward_fill(new_e_clmb_seg,mask_crse,dim=WPTS)*mask_crse
+    new_s_crse_seg = new_s_crse_seg + s_crse_seg * (new_s_crse_seg==0.)
+    new_e_crse_seg = named.backward_fill(new_s_clmb_seg,mask_crse,dim=WPTS)*mask_crse
+    # new_e_crse_seg = new_e_crse_seg + e_crse_seg * (new_e_crse_seg==0.)
+    # print(s_seg(s_crse,mask_crse))
+    # print(new_s_clmb_seg)
+    # print(new_e_clmb_seg)
+    # print(mask_clmb)
+    # print(new_s_crse_seg)
+    # print(new_e_crse_seg)
+    # # print(s_crse_seg)
+    # # print(e_crse_seg)
+    # # raise Exception
+    # print(mask_crse)
+    modif_cruise = (new_e_crse_seg - new_s_crse_seg) * (new_e_crse_seg!=0.)
+    # print(modif_cruise)
+    modif_cruise = modif_cruise + duration_cruise * (new_e_crse_seg==0.)
+    # print(duration_cruise)
+    # print(modif_cruise)
+    # raise Exception
+    # scale_only_duration(dparams,)
+    # new_duration = dparams["duration"].align_as(scalez)/scalez
+    # # print(s_clmb + mduration_climb*(s_clmb!=0.))
+    # l = []
+    # assert(new_duration.names[-1]==WPTS)
+    # for i in range(new_duration.shape[-1]):
+    #     mask_clmb[...,i]
+    #     pass
+    # raise Exception
+    # print(mduration_climb)
+    # print(new_e_clmb)
+    # print(e_clmb)
+    # print(new_s_clmb)
+    # print(s_clmb)
+    # raise Exception
+
+    # print(e_crse)
+    # ff=named.forward_fill(new_e_clmb,mask_cruise,dim=WPTS)
+    # print(ff)
+    # ns_crse = named.maximum(s_crse,ff)*(s_crse!=0.)
+    # ne_crse = named.maximum(e_crse,ff)*(e_crse!=0.)
+    # # modif_cruise = fill_diff(named.backward_fill(ne_crse,mask_cruise,dim=WPTS),named.forward_fill(ns_crse,mask_cruise,dim=WPTS))*mask_cruise
+    # # print(modif_cruise)
+    # print(ns_crse)
+    # print(s_crse)
+    # print(e_crse)
+    # print(e_crse)
+    # modif_cruise = ( duration_cruise- named.forward_fill(modif_climb,mask_cruise,dim=WPTS))*mask_cruise
+    # mtwpts0 = flights.compute_twpts_with_wpts0(dparams["duration"].align_to(*basename,WPTS))
+    # print(mtwpts0)
+    # print(get_end_seg(twpts0,mask_climb))
+    # print(duration_climb)
+    # print(duration_cruise)
+    # raise Exception
+#     shape = list(modif_cruise.shape)
+#     shape[-1]+=1
+#     assert(modif_cruise.names[-1]==WPTS)
+#     myrange = torch.ones(shape,dtype=modif_cruise.dtype,device=modif_cruise.device,names=modif_cruise.names).cumsum(dim=-1)
+#     print(myrange.shape)
+#     count_cruise = fill_diff(get_end_seg(myrange,mask_cruise),get_start_seg(myrange,mask_cruise))*mask_cruise
+#     print(mask_cruise.shape)
+#     print(modif_cruise.shape)
+#     print(count_cruise.shape)
+#     print(modif_cruise/count_cruise)
+#     # raise Exception("fait avec truc diviser puis remultiplie par count, marchera pas en fait car ne s'applique homogenement àl'ensemble des wpts du cruise qu'on décale")
+# #Ne travailler qu'avec les segments en numérotant les segments en extrayant les durées de segements
+#     deleted_cruise = modif_cruise < 0.
+#     if deleted_cruise.any():
+#         topropagate = torch.zeros_like(modif_cruise[...,0])
+#         for i in range(modif_cruise.shape[-1]):
+#             toremove = named.minimum(topropagate,modif_cruise[...,i])
+#             toremove = named.where(toremove>0.,toremove,torch.zeros_like(toremove))
+#             delay = - named.where(deleted_cruise[...,i],modif_cruise[...,i],torch.zeros_like(modif_cruise[...,i]))
+#             modif_cruise[...,i] = modif_cruise[...,i] + delay - toremove
+#             topropagate = topropagate + delay - toremove
+#             print(i)
+#             print(topropagate)
+    scale_duration = named.where(mask_crse, duration_cruise/modif_cruise , torch.ones_like(modif_cruise))
+    # raise Exception
+    # scale_duration = named.where(mask_climb, 1/scalez, scale_duration)
+    # dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) * scale_duration
+    # scale_only_duration(dparams,scale_duration)
+    scale_vspeed(dparams,scale_duration,iz)
+    # print(dparams["duration"])
+    assert(torch.isfinite(dparams["duration"]).all())
+    assert(torch.isfinite(dparams["v"]).all())
+    # dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) * scale_duration
+    # dparams["duration"] = named.where(mask_cruise,dparams["duration"].align_to(*basename,WPTS) * scale_duration
+    # scale_vspeed(dparams,1/scale_duration,iz)
+    # print(compute_vxy(v=dparams["v"],theta=dparams["theta"])[...,iz])
+    # print(scale_duration)
+    # print(mask_climb)
+    # print(dparams["duration"])
+    # raise Exception
+    # print(deleted_cruise)
+    # print(torch.cumsum(modif_cruise*deleted_cruise,dim=-1)*mask_cruise)
+    # scale_c = named.where(mask_cruise, duration_cruise/modif_cruise ,torch.ones_like(modif_cruise))
+    # scaled_duration = named.where(mask_cruise, modif_cruise,duration_cruise)
+    # print(scaled_duration)
+    # raise Exception
+    # # scale_c = named.where(mask_cruise, duration_cruise/modif_cruise ,torch.ones_like(modif_cruise))
+    # # print(scale_c.names)
+    # # v = scale_c.rename(None)
+    # # l=[]
+    # # for i,n in enumerate(scale_c.names):
+    # #     print(n)
+    # #     v,ind=torch.min(v,dim=0)
+    # #     l.append(ind)
+    # #     print(v)
+    # #     print(ind)
+    # # print(l)
+    # s=slice(0,1)
+    # print(duration_climb[s])
+    # print(mduration_climb[s])
+    # # print(modif_climb[s])
+    # print(duration_cruise[s])
+    # print(modif_cruise[s])
+    # print(mask_cruise[s])
+    # print(mask_climb[s])
+    # print(scale_c)
+    # print(maskt[s])
+    # print(maskz[s])
+    # # raise Exception
+    # print(scale_c.min(),scale_c.max())
+    # assert(scale_c.max()<10000.)
+    # assert(scale_c.min()>0.)
+    # # s=slice(29,30)
+    # # print(scale_c[s])
+    # # print(scale_c.names)
+    # # print(scale_c.shape)
+    # # raise Exception
+    # scale_vspeed(dparams,scale_c,iz)
+    # print(modif_climb[43:44])
+    # print(modif_cruise[43:44])
+    # print(mask_cruise[43:44])
+    # print(mask_climb[43:44])
+    # print(scale_c[43:44])
+    # s=slice(45,46)
+
+    # print(modif_climb[s])
+    # print(modif_cruise[s])
+    # print(mask_cruise[s])
+    # print(mask_climb[s])
+    # print(scale_c[s])
+    # print(maskt[s])
+    # print(maskz[s])
+    # raise Exception
+    for k in ["turn_rate","theta"]:
+        dparams[k]=dparams[k].align_to(*basename,WPTS)
+    for k in ["xy0"]:
+        dparams[k]=dparams[k].align_to(*basename,XY)
+    # raise Exception
+    return f.from_argsdict(dparams)
+def change_vertical_speed_old_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1):
     forward = True
     assert(iz==0 or iz==1)
     it = 1-iz
