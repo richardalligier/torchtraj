@@ -13,7 +13,7 @@ def proj(phi):
 
 
 class QhullDist:
-    def __init__(self, device, n = 180):
+    def __init__(self, device="cpu", n = 180):
         self.projtheta = proj(torch.linspace(0, torch.pi, n,device=device))
     def projection(self, xy):
         self.projtheta = self.projtheta.to(xy.dtype)
@@ -22,6 +22,9 @@ class QhullDist:
         # print(self.projtheta.dtype,xy.dtype)
         res = torch.inner(xy.rename(None), self.projtheta)
         return res.rename(*newnames)
+    def to(self,device):
+        self.projtheta = self.projtheta.to(device)
+        return self
     def dist(self, xy1, xy2, dimsInSet:tuple[str], capmem=None):
         if capmem is None:
             return self.distone(xy1, xy2, dimsInSet)
