@@ -99,12 +99,14 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     '''
     wpts_start = wpts_start - 1
     wpts_end = wpts_end - 1
+    # print(wpts_start)
     argstocheck = (dt,wpts_start,wpts_end)
     basename = compute_basename(f,*argstocheck)
     vhead = vheading(f.theta)
     meanv = f.meanv()
     assert(vhead.names[-2]==WPTS)
-    assert(wpts_start.min()>0)
+    assert(wpts_start.min()>=0)
+    # print(wpts_start)
     duration_at_wpt = gather_wpts(f.duration,wpts_start).align_to(*basename)
     newduration_at_wpt = duration_at_wpt+dt.align_to(*basename)
     newduration_at_wpt = newduration_at_wpt.clip(min=0.)
@@ -112,12 +114,14 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     remaining_dt = dt.align_to(*basename) - actual_dt
     dxy = (vhead * meanv.align_to(...,XY)).align_to(*basename,WPTS,XY)
     dxy = dxy * actual_dt.align_as(dxy)
+    # print(dxy)
     dxy = zero_pad(dxy,wpts_start-1,wpts_start+1)
     dxy = torch.cumsum(dxy,axis=-2)
     dxy = zero_pad(dxy,wpts_start-1,wpts_end)
+    # print(dxy)
     dparams = applydxy(f,dxy)
     result = f.from_wpts(**dparams)
-    if remaining_dt.max()==0.:
+    if (remaining_dt==0.).rename(None).all():
         return result
     else:
         return adddt_translate(remaining_dt,wpts_start,wpts_end+1,result)

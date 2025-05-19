@@ -115,42 +115,51 @@ class Flights:
         return self.v[...,:-1]
     def __str__(self):
         return "\n".join(k+":"+str(v)+str(v.shape) for k,v in sorted(self.dictparams().items()))
-
     def pad_wpts_at_end(self,npad):
-        d = {k:v.clone() for k,v in self.dictparams().items()}
-        # print(self.turn_rate)
-        # print(self.turn_rate.shape)
+        t = self.duration[...,:1]
         if npad == 0:
-            return self.from_argsdict(d)
-        assert(self.turn_rate.shape[-1]==1)
-        durationbeforesplit=self.duration.cumsum(axis=-1)[...,-1]
-        # print(npad)
-        # print(durationbeforesplit)
-        for v in ["v","theta","duration"]:
-            d[v]=named.pad(d[v],(0,npad),mode="replicate")
-        # lastduration = self.duration[...,-1]#.min().item()
-        # ndiv = 1024#8192#2048#4096#2048
-        # step_t = torch.trunc(lastduration * 0.9 / npad * ndiv) / ndiv
-        # assert(step_t.min()>0.)
-        # added_t = step_t * npad
-        # d["duration"][...,-1] = d["duration"][...,-1] - added_t
-        # for v in ["duration"]:
-        #     d[v]=named.pad(d[v],(0,npad),mode="constant",value=0.)#added_t / npad * 0.5)
-        #     d[v][...,-npad:] = step_t.rename(None).unsqueeze(-1)
-        # durationaftersplit=d[v].cumsum(axis=-1)[...,-1]
-        # diff = (durationaftersplit.rename(None)-durationbeforesplit.rename(None)).abs().max().item()
-        # assert(diff>=0.)
-        # assert (diff==0.)
-        return self.from_argsdict(d)
+            return self.clone()
+        f = self
+        for _ in range(npad):
+            f = f.add_wpt_at_t(t)
+        return f
+    # def pad_wpts_at_end(self,npad):
+    #     d = {k:v.clone() for k,v in self.dictparams().items()}
+    #     # print(self.turn_rate)
+    #     # print(self.turn_rate.shape)
+    #     if npad == 0:
+    #         return self.from_argsdict(d)
+    #     assert(self.turn_rate.shape[-1]==1)
+    #     durationbeforesplit=self.duration.cumsum(axis=-1)[...,-1]
+    #     # print(npad)
+    #     # print(durationbeforesplit)
+    #     for v in ["v","theta","duration"]:
+    #         d[v]=named.pad(d[v],(0,npad),mode="replicate")
+    #     # lastduration = self.duration[...,-1]#.min().item()
+    #     # ndiv = 1024#8192#2048#4096#2048
+    #     # step_t = torch.trunc(lastduration * 0.9 / npad * ndiv) / ndiv
+    #     # assert(step_t.min()>0.)
+    #     # added_t = step_t * npad
+    #     # d["duration"][...,-1] = d["duration"][...,-1] - added_t
+    #     # for v in ["duration"]:
+    #     #     d[v]=named.pad(d[v],(0,npad),mode="constant",value=0.)#added_t / npad * 0.5)
+    #     #     d[v][...,-npad:] = step_t.rename(None).unsqueeze(-1)
+    #     # durationaftersplit=d[v].cumsum(axis=-1)[...,-1]
+    #     # diff = (durationaftersplit.rename(None)-durationbeforesplit.rename(None)).abs().max().item()
+    #     # assert(diff>=0.)
+    #     # assert (diff==0.)
+    #     return self.from_argsdict(d)
 
     def add_wpt_at_t(self,t:torch.tensor):
         assert(t.min()>0.)
+        assert(t.names[-1]==WPTS)
+        assert(t.shape[-1]==1)
         assert(T not in t.names)
-        assert(WPTS in t.names)
         for x in t.names:
             assert x in self.duration.names
         tend = torch.cumsum(self.duration,axis=-1)
         assert(tend.names[-1]==WPTS)
+
         tstart = get_tstart(tend)
         assert((tend-tstart).min()>0.)
         t = t.align_as(tend)
@@ -159,10 +168,21 @@ class Flights:
         tshape = tshape[:-1]+(1,)
         t = t.broadcast_to(tshape).clone()
         # print(f"{t.names=}")
+        isalreadyin = torch.max(t==tend,dim=-1).values
+        duration = tend - tstart
+        dmax,imax = duration.max(dim=-1)
+        imax = named.unsqueeze(imax,-1,WPTS)
+        # print(isalreadyin)
+        # print(dmax)
+        tstart_max = named.gather(tstart,WPTS,imax)#.align_to(...,WPTS)
+        assert(tstart_max.shape[-1]==1)
+        t_dur_max = tstart_max.align_as(tend) + 0.5 * dmax.align_as(tend)
+        t = t.align_as(tend) * ~isalreadyin.align_as(tend) + t_dur_max * isalreadyin.align_as(tend)
         merged = torch.cat([t,tend],axis=-1)
         newtend = named.sort(merged,dim=WPTS)
-        print((newtend-get_tstart(newtend)).min())
-        raise Exception
+        # print((newtend-get_tstart(newtend)).max())
+        # print((newtend-get_tstart(newtend)).min())
+
         def separate(tend):
             tstart = get_tstart(tend)
             duration = tend-tstart
@@ -185,10 +205,11 @@ class Flights:
                 return separate(res)
         newtend  = separate(newtend).align_as(tend)
         newtstart = get_tstart(newtend)
+        assert(newtstart.min()>=0.)
         d = {}
         # xy = traj.generate(self, newtend.rename(**{WPTS:T})).rename(**{T:WPTS})
         iwpts = self.which_seg_at_t(newtstart.rename(**{WPTS:T}))#.rename(**{T:WPTS})
-        print(iwpts)
+        # print(iwpts)
         d["duration"] = (newtend - newtstart)#.align_as(self.duration)
         d["v"] = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS}).align_as(d["duration"])
         d["theta"] = uncertainty.gather_wpts(self.theta,iwpts).rename(**{T:WPTS}).align_as(d["duration"])
