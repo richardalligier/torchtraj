@@ -124,27 +124,23 @@ class Flights:
             return self.from_argsdict(d)
         assert(self.turn_rate.shape[-1]==1)
         durationbeforesplit=self.duration.cumsum(axis=-1)[...,-1]
-        for v in ["v","theta"]:
+        # print(npad)
+        # print(durationbeforesplit)
+        for v in ["v","theta","duration"]:
             d[v]=named.pad(d[v],(0,npad),mode="replicate")
-        lastduration = self.duration[...,-1]#.min().item()
-        step_t = torch.trunc(lastduration * 0.9 / npad * 1024.) / 1024.
-        assert( step_t.min()>0.)
-        added_t = step_t * npad
-        d["duration"][...,-1] = d["duration"][...,-1] - added_t
-        for v in ["duration"]:
-            # print("duration",npad)
-            # print("orig",d[v].names,d[v].shape)
-            d[v]=named.pad(d[v],(0,npad),mode="constant",value=0.)#added_t / npad * 0.5)
-            # print("pade",d[v].names,d[v].shape)
-            # raise Exception
-            # print("step",step_t.names,step_t.shape)
-            d[v][...,-npad:] = step_t.rename(None).unsqueeze(-1)
-        durationaftersplit=d[v].cumsum(axis=-1)[...,-1]
-        # print(self.duration.cumsum(axis=-1))
-        # print(d["duration"].cumsum(axis=-1))
-        diff = (durationaftersplit.rename(None)-durationbeforesplit.rename(None)).abs().max().item()
-        assert(diff>=0.)
-        assert (diff==0.)
+        # lastduration = self.duration[...,-1]#.min().item()
+        # ndiv = 1024#8192#2048#4096#2048
+        # step_t = torch.trunc(lastduration * 0.9 / npad * ndiv) / ndiv
+        # assert(step_t.min()>0.)
+        # added_t = step_t * npad
+        # d["duration"][...,-1] = d["duration"][...,-1] - added_t
+        # for v in ["duration"]:
+        #     d[v]=named.pad(d[v],(0,npad),mode="constant",value=0.)#added_t / npad * 0.5)
+        #     d[v][...,-npad:] = step_t.rename(None).unsqueeze(-1)
+        # durationaftersplit=d[v].cumsum(axis=-1)[...,-1]
+        # diff = (durationaftersplit.rename(None)-durationbeforesplit.rename(None)).abs().max().item()
+        # assert(diff>=0.)
+        # assert (diff==0.)
         return self.from_argsdict(d)
 
     def add_wpt_at_t(self,t:torch.tensor):
@@ -170,12 +166,20 @@ class Flights:
             tstart = get_tstart(tend)
             duration = tend-tstart
             if duration.min()>0.:
+                #print("out")
                 return tend
             else:
                 dmin = duration.rename(None)[(duration > 0.).rename(None)].min()
-                # print(f"{dmin=}")
+                print(f"{dmin=:.20f}")
                 # raise Exception
                 tend = tend - dmin * 0.5 * (duration==0.)
+                assert(tend.min()>0)
+                # gap = dmin * 0.5 * (duration==0.)
+                # print((newtend==tend).rename(None).all())
+                # print(gap.min(),gap.max())
+                # print( (tend-gap).min(),(tend-gap).max())
+                # print((duration==0.).rename(None).any())
+                # tend = newtend
                 res = named.sort(tend,dim=WPTS)
                 return separate(res)
         newtend  = separate(newtend).align_as(tend)
@@ -183,6 +187,7 @@ class Flights:
         d = {}
         # xy = traj.generate(self, newtend.rename(**{WPTS:T})).rename(**{T:WPTS})
         iwpts = self.which_seg_at_t(newtstart.rename(**{WPTS:T}))#.rename(**{T:WPTS})
+        print(iwpts)
         d["duration"] = (newtend - newtstart)#.align_as(self.duration)
         d["v"] = uncertainty.gather_wpts(self.v,iwpts).rename(**{T:WPTS}).align_as(d["duration"])
         d["theta"] = uncertainty.gather_wpts(self.theta,iwpts).rename(**{T:WPTS}).align_as(d["duration"])

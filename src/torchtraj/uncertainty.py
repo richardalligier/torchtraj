@@ -691,8 +691,8 @@ def change_vertical_speed_fwd(dvspeed,tmin,tmax,f,thresh_rocd=200/60,iz=1,min_cr
     # scale_only_duration(dparams,scale_duration)
     scale_vspeed(dparams,scale_duration,iz)
     # print(dparams["duration"])
-    assert(torch.isfinite(dparams["duration"]).all())
-    assert(torch.isfinite(dparams["v"]).all())
+    assert(torch.isfinite(dparams["duration"].rename(None)).all())
+    assert(torch.isfinite(dparams["v"].rename(None)).all())
     # dparams["duration"] = dparams["duration"].align_to(*basename,WPTS) * scale_duration
     # dparams["duration"] = named.where(mask_cruise,dparams["duration"].align_to(*basename,WPTS) * scale_duration
     # scale_vspeed(dparams,1/scale_duration,iz)
