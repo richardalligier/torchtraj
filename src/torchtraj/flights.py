@@ -161,7 +161,8 @@ class Flights:
         # print(f"{t.names=}")
         merged = torch.cat([t,tend],axis=-1)
         newtend = named.sort(merged,dim=WPTS)
-        # raise Exception
+        print((newtend-get_tstart(newtend)).min())
+        raise Exception
         def separate(tend):
             tstart = get_tstart(tend)
             duration = tend-tstart
