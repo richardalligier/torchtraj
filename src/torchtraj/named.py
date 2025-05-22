@@ -181,6 +181,19 @@ def nanamax(tensor, dim:tuple[str]):
     return out.rename(*outnames)
 
 
+# def nanamax(tensor, dim:tuple[str]):
+#     min_value = torch.finfo(tensor.dtype).min
+#     tensornames = tensor.names
+#     out = tensor.rename(None)
+#     torch.nan_to_num(out,nan=min_value)
+#     out=out.rename(*tensor.names)
+#     out = amax(out,dim)
+#     outnames = out.names
+#     out = out.rename(None)
+#     out[out==min_value]= torch.nan
+#     return out.rename(*outnames)
+
+
 def nanamin(tensor, dim:tuple[str]):
     min_value = torch.finfo(tensor.dtype).max
     out= torch.nan_to_num(tensor.rename(None),nan=min_value).rename(*tensor.names)

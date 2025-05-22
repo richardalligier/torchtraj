@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from . import named
 
 from .utils import PROJ, XY
@@ -26,6 +27,7 @@ class QhullDist:
         self.projtheta = self.projtheta.to(device)
         return self
     def dist(self, xy1, xy2, dimsInSet:tuple[str], capmem=None):
+        torch.cuda.empty_cache()
         if capmem is None:
             return self.distone(xy1, xy2, dimsInSet)
         else:
@@ -33,14 +35,30 @@ class QhullDist:
             csplitn = [(s,name,i) for i,(s,name) in enumerate(zip(xy1.shape,xy1.names)) if name in candidatesplit]
             nb,chosen,ichosen = max(csplitn)
             ichosen2 = xy2.names.index(chosen)
+            # maxshape = {}
+            # for i,name in enumerate(xy1.names):
+            #     if name in dimsInSet:
+            #         name += "1"
+            #     if name !=XY:
+            #         maxshape[name] = max(xy1.shape[i],maxshape.get(name,1))
+            # # print(maxshape)
+            # for i,name in enumerate(xy2.names):
+            #     if name in dimsInSet:
+            #         name += "2"
+            #     if name !=XY:
+            #         maxshape[name] = max(xy2.shape[i],maxshape.get(name,1))
+            # print(maxshape)
+            # nelements = np.prod(list(maxshape.values()))*self.projtheta.shape[0]/2
+            # print(f"{nelements=}{max(xy1.numel(),xy2.numel())=}")
+
             n_per_chosen = (max(xy1.numel(),xy2.numel())*self.projtheta.shape[0])//nb
             chunk_size = min(max(capmem//n_per_chosen,1),nb)
-            # print(chunk_size,xy1.numel(),nb)
             assert(xy1.shape[ichosen] == xy2.shape[ichosen2])
-            # print(nb,chunk_size)
-            if nb==1 or nb == chunk_size:
+            print(nb,chunk_size,n_per_chosen)
+            if nb==1 or chunk_size == nb: # or nb == chunk_size:
                 return self.dist(xy1,xy2,dimsInSet,capmem=None)
             else:
+                # raise Exception
                 l=[]
                 # print(chunk_size,chosen)
                 # print(len(torch.split(xy1,chunk_size,dim=ichosen)))
@@ -73,17 +91,35 @@ class QhullDist:
         # def support(proj,dims):
         #     return amaxnames(proj,dim=dims)#/np.sqrt(2.)
         xy1 = xy1.refine_names(...,XY)
-        xy2 = xy2.refine_names(...,XY)
         p1 = self.projection(xy1)
-        p2 = self.projection(xy2)#.align_as(p1)
+#        del xy1
+#        torch.cuda.empty_cache()
         p1low = named.nanamin(p1,dim=replaced1) if len(replaced1) > 0 else p1
         p1high = named.nanamax(p1,dim=replaced1) if len(replaced1) > 0 else p1
+#        del p1
+#        torch.cuda.empty_cache()
+        xy2 = xy2.refine_names(...,XY)
+        p2 = self.projection(xy2)#.align_as(p1)
+#        del xy2
+#        torch.cuda.empty_cache()
         p2low = named.nanamin(p2,dim=replaced2) if len(replaced2) > 0 else p2
         p2high = named.nanamax(p2,dim=replaced2) if len(replaced2) > 0 else p2
+#        del p2
+#        torch.cuda.empty_cache()
         d1 = p2low - p1high
+#        del p2low, p1high
+#        torch.cuda.empty_cache()
         d2 = p1low - p2high
+#        del p1low, p2high
+#        torch.cuda.empty_cache()
+        # print(f"{xy1.numel()=},{xy2.numel()=},{p1.numel()=},{p2.numel()=}")
+        # print(f"{p1low.numel()=},{p2low.numel()=},{p1high.numel()=},{p2high.numel()=}")
+        # print(f"{d1.numel()=},{d2.numel()=}")
+        # raise Exception
         assert d1.names==d2.names
-        d = torch.maximum(d1.rename(None),d2.rename(None))
+        #d = torch.maximum(d1.rename(None),d2.rename(None))
+        d = d1.rename(None)
+        torch.maximum(d,d2.rename(None),out=d)
         return torch.amax(d,dim=-1).refine_names(*d1.names[:-1])#*outnames1[:-1])#*d1.names[:-1])#amaxnames(d1, dim=()
 
 
