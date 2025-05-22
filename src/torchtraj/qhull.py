@@ -92,26 +92,26 @@ class QhullDist:
         #     return amaxnames(proj,dim=dims)#/np.sqrt(2.)
         xy1 = xy1.refine_names(...,XY)
         p1 = self.projection(xy1)
-#        del xy1
+        del xy1
 #        torch.cuda.empty_cache()
         p1low = named.nanamin(p1,dim=replaced1) if len(replaced1) > 0 else p1
         p1high = named.nanamax(p1,dim=replaced1) if len(replaced1) > 0 else p1
-#        del p1
+        del p1
 #        torch.cuda.empty_cache()
         xy2 = xy2.refine_names(...,XY)
         p2 = self.projection(xy2)#.align_as(p1)
-#        del xy2
+        del xy2
 #        torch.cuda.empty_cache()
         p2low = named.nanamin(p2,dim=replaced2) if len(replaced2) > 0 else p2
         p2high = named.nanamax(p2,dim=replaced2) if len(replaced2) > 0 else p2
-#        del p2
-#        torch.cuda.empty_cache()
+        del p2
+        torch.cuda.empty_cache()
         d1 = p2low - p1high
-#        del p2low, p1high
-#        torch.cuda.empty_cache()
+        del p2low, p1high
+        torch.cuda.empty_cache()
         d2 = p1low - p2high
-#        del p1low, p2high
-#        torch.cuda.empty_cache()
+        del p1low, p2high
+        torch.cuda.empty_cache()
         # print(f"{xy1.numel()=},{xy2.numel()=},{p1.numel()=},{p2.numel()=}")
         # print(f"{p1low.numel()=},{p2low.numel()=},{p1high.numel()=},{p2high.numel()=}")
         # print(f"{d1.numel()=},{d2.numel()=}")
