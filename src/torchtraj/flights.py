@@ -327,7 +327,7 @@ class Flights:
     #     return self.dmap(self,f=lambda v:v.to(device=device,dtype=dtype))
     @classmethod
     def dmap(cls, flights,f):
-        return cls(**{k:f(v) for k,v in flights.dictparams().items()})
+        return cls(**{k:f(k,v) for k,v in flights.dictparams().items()})
     @classmethod
     def from_argslist(cls,l):
         return cls(*l)

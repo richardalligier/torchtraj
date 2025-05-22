@@ -29,7 +29,10 @@ def time_between_endseg_to_beginturn(distance,meanv):
     return named.pad(distance/ meanv[...,:-1],(0,1),'constant',0)
 def time_between_endturn_to_beginseg(distance,meanv):
     return named.pad(distance/ meanv[...,1:],(1,0),'constant',0)
+
+
 def segment_xy(f, t, tstart, v, theta, duration):
+    # torch.cuda.empty_cache()
     # duration = named.unsqueeze(duration,-1,T)#.align_as(used_t)
     tstart = named.unsqueeze(tstart,-1,T)
     clipped_t = t.align_as(tstart)-tstart
@@ -42,9 +45,11 @@ def segment_xy(f, t, tstart, v, theta, duration):
     # vxy = named.unsqueeze(vxy,-2,T)
     # print(clipped_t.shape,duration.shape,tstart.shape)
     # duration = named.unsqueeze(duration,-1,T)#.align_as(used_t)
-    clipped_t.clip_(min=torch.zeros_like(clipped_t),max=named.unsqueeze(duration,-1,T))#duration)
+    clipped_t.clip_(min=torch.zeros_like(clipped_t),max=named.unsqueeze(duration,-1,T)) # duration)
     named.unsqueeze_(clipped_t,-1,XY)
     # xy = v.align_as(clipped_t) * c.align_as(clipped_t) * clipped_t #named.unsqueeze(clipped_t,-1,XY)
+    # print(f"{c.shape=} {c.names=}")
+    # print(f"{f.segdist(clipped_t,duration).shape=} {f.segdist(clipped_t,duration).names=}")
     xy = f.segdist(clipped_t,duration) * c.align_as(clipped_t)
     # print(xy.shape,sys.getsizeof(xy.storage())/1024/1024)
     # print(clipped_t.shape,sys.getsizeof(clipped_t.storage())/1024/1024)
@@ -95,7 +100,8 @@ def segment_xy(f, t, tstart, v, theta, duration):
 def segment_xy_lowmemory(f, t, tstart, v, theta, duration):#t, tstart, vxy, duration):
     assert(duration.names[-1]==WPTS)
     assert(tstart.names[-1]==WPTS)
-    vxy = v.align_as() * vheading(theta)
+    vh = vheading(theta)
+    vxy = v.align_as(vh) * vh
     duration = named.unsqueeze(duration,-1,T)#.align_as(used_t)
     tstart = named.unsqueeze(tstart,-1,T)
     def clipped_t_wpts(i):
@@ -113,11 +119,11 @@ def segment_xy_lowmemory(f, t, tstart, v, theta, duration):#t, tstart, vxy, dura
     # named.unsqueeze_(clipped_t,-1,XY)
     # xy = clipped_t
     # xy.mul_(vxy)
-    print("vxy.names",vxy.names)
+    # print("vxy.names",vxy.names)
     xy = vxy[...,0,:,:] * clipped_t_wpts(0)#named.unsqueeze(clipped_t,-1,XY)
     for i in range(1,duration.shape[-2]):
         xy.add_(vxy[...,i,:,:] * clipped_t_wpts(i))
-    print(xy.shape,sys.getsizeof(xy.storage())/1024/1024)
+    # print(xy.shape,sys.getsizeof(xy.storage())/1024/1024)
     # print(clipped_t.shape,sys.getsizeof(clipped_t.storage())/1024/1024)
     return xy #torch.sum(xy,axis=xy.names.index(WPTS))
 

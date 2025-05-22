@@ -37,6 +37,7 @@ class QhullDist:
             chunk_size = min(max(capmem//n_per_chosen,1),nb)
             # print(chunk_size,xy1.numel(),nb)
             assert(xy1.shape[ichosen] == xy2.shape[ichosen2])
+            # print(nb,chunk_size)
             if nb==1 or nb == chunk_size:
                 return self.dist(xy1,xy2,dimsInSet,capmem=None)
             else:
