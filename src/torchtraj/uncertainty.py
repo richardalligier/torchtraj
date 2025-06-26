@@ -104,14 +104,20 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     basename = compute_basename(f,*argstocheck)
     vhead = vheading(f.theta)
     meanv = f.meanv()
+    # print(f"{wpts_start=}")
     assert(vhead.names[-2]==WPTS)
     assert(wpts_start.min()>=0)
     # print(wpts_start)
     duration_at_wpt = gather_wpts(f.duration,wpts_start).align_to(*basename)
+    # print(f"{duration_at_wpt=}")
     newduration_at_wpt = duration_at_wpt+dt.align_to(*basename)
+    # print(f"{newduration_at_wpt=}")
     newduration_at_wpt = newduration_at_wpt.clip(min=0.)
+    # print(f"{newduration_at_wpt=}")
     actual_dt = newduration_at_wpt - duration_at_wpt
+    # print(f"{actual_dt=}")
     remaining_dt = dt.align_to(*basename) - actual_dt
+    # print(f"{remaining_dt=}")
     dxy = (vhead * meanv.align_to(...,XY)).align_to(*basename,WPTS,XY)
     dxy = dxy * actual_dt.align_as(dxy)
     # print(dxy)
@@ -121,7 +127,8 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     # print(dxy)
     dparams = applydxy(f,dxy)
     result = f.from_wpts(**dparams)
-    if (remaining_dt==0.).rename(None).all():
+    if (torch.abs(remaining_dt)<1e-6).rename(None).all():
+        # print("end")
         return result
     else:
         return adddt_translate(remaining_dt,wpts_start,wpts_end+1,result)

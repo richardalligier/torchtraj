@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from . import named
 
-from .utils import PROJ, XY
+from .utils import PROJ, XY, clone
 
 
 
@@ -14,8 +14,16 @@ def proj(phi):
 
 
 class QhullDist:
-    def __init__(self, device="cpu", n = 180):
-        self.projtheta = proj(torch.linspace(0, torch.pi, n,device=device))
+    def __init__(self, projtheta):
+        self.projtheta = projtheta
+    @classmethod
+    def from_device_n(cls, device="cpu", n = 180):
+        projtheta = proj(torch.linspace(0, torch.pi, n,device=device))
+        return cls(projtheta=projtheta)
+    def dictparams(self):
+        return {"projtheta":self.projtheta}
+    def clone(self):
+        return QhullDist(**clone(self.dictparams()))
     def projection(self, xy):
         self.projtheta = self.projtheta.to(xy.dtype)
         names = xy.names
