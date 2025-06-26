@@ -127,7 +127,7 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     # print(dxy)
     dparams = applydxy(f,dxy)
     result = f.from_wpts(**dparams)
-    if (torch.abs(remaining_dt)<1e-6).rename(None).all():
+    if (torch.abs(remaining_dt)<1e-3).rename(None).all():
         # print("end")
         return result
     else:
