@@ -26,6 +26,7 @@ def compute_vxy(v,theta):
 
 
 def apply_mask(res,mask):
+    assert(mask.dtype!=torch.bool)
     return res * mask.align_as(res)
 
 

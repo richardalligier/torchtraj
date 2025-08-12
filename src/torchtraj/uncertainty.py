@@ -97,6 +97,8 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     wpts_end-1 is the last wpts to be shifted
     wpts_end unchanged
     '''
+    # print(dt)
+    # print(wpts_start)
     wpts_start = wpts_start - 1
     wpts_end = wpts_end - 1
     # print(wpts_start)
@@ -127,10 +129,20 @@ def adddt_translate(dt,wpts_start,wpts_end,f):
     # print(dxy)
     dparams = applydxy(f,dxy)
     result = f.from_wpts(**dparams)
-    if (torch.abs(remaining_dt)<1e-3).rename(None).all():
+    if (torch.abs(remaining_dt)<1e-2).rename(None).all():
         # print("end")
+        # print(remaining_dt)
+        # print(remaining_dt.dtype)
         return result
     else:
+        # print(remaining_dt)
+        # print(remaining_dt.dtype)
+        # # print(wpts_start.min())
+        if wpts_start.max()==0:
+            raise Exception("infinite loop on torchtraj/uncertainty.adddt_translate")
+        #     print(remaining_dt)
+        #     print(wpts_start)
+        wpts_start = torch.clip(wpts_start,min=1)
         return adddt_translate(remaining_dt,wpts_start,wpts_end+1,result)
 
 
