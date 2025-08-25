@@ -177,7 +177,11 @@ def nanamax(tensor, dim:tuple[str]):
     out = amax(out,dim)
     outnames = out.names
     out = out.rename(None)
-    out[out==min_value]= torch.nan
+    mask = out==min_value
+    out = out.masked_fill(mask,torch.nan)#min_value)
+    # mask = out!=min_value
+    # out = out * (mask/mask)
+    # out[out==min_value]= torch.nan
     return out.rename(*outnames)
 
 
@@ -200,7 +204,11 @@ def nanamin(tensor, dim:tuple[str]):
     out = amin(out,dim)
     outnames = out.names
     out = out.rename(None)
-    out[out==min_value]= torch.nan
+    mask = out==min_value
+    out = out.masked_fill(mask,torch.nan)#min_value)
+    # mask = out!=min_value
+    # out = out * (mask/mask)
+    # out[out==min_value]= torch.nan
     return out.rename(*outnames)
 
 
@@ -266,7 +274,8 @@ def flip(t,dims):
 
 def nanmax(tensor, dim=None, keepdim=False):
     min_value = torch.finfo(tensor.dtype).min
-    output = tensor.nan_to_num(min_value)
+    # output = tensor.nan_to_num(min_value)
+    output = torch.nan_to_num(tensor,nan=min_value)
     if dim is None:
         return torch.max(output)
     else:
@@ -275,7 +284,7 @@ def nanmax(tensor, dim=None, keepdim=False):
 
 def nanmin(tensor, dim=None, keepdim=False):
     max_value = torch.finfo(tensor.dtype).max
-    output = tensor.nan_to_num(max_value)
+    output = torch.nan_to_num(tensor,nan=max_value)#tensor.nan_to_num(max_value)
     if dim is None:
         return torch.min(output)
     else:

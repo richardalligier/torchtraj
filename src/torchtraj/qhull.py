@@ -99,11 +99,16 @@ class QhullDist:
         # def support(proj,dims):
         #     return amaxnames(proj,dim=dims)#/np.sqrt(2.)
         xy1 = xy1.refine_names(...,XY)
+        # print(f"{torch.isnan(xy1).sum()=}")
+        # print(f"{torch.isnan(xy2).sum()=}")
         p1 = self.projection(xy1)
         del xy1
 #        torch.cuda.empty_cache()
+#        xy1.sum().backward()
         p1low = named.nanamin(p1,dim=replaced1) if len(replaced1) > 0 else p1
         p1high = named.nanamax(p1,dim=replaced1) if len(replaced1) > 0 else p1
+        # p1low.sum().backward()
+        # p1high.sum().backward()
         del p1
 #        torch.cuda.empty_cache()
         xy2 = xy2.refine_names(...,XY)
@@ -125,10 +130,15 @@ class QhullDist:
         # print(f"{d1.numel()=},{d2.numel()=}")
         # raise Exception
         assert d1.names==d2.names
-        #d = torch.maximum(d1.rename(None),d2.rename(None))
-        d = d1.rename(None)
-        torch.maximum(d,d2.rename(None),out=d)
-        return torch.amax(d,dim=-1).refine_names(*d1.names[:-1])#*outnames1[:-1])#*d1.names[:-1])#amaxnames(d1, dim=()
+        d = torch.maximum(d1.rename(None),d2.rename(None))
+        res = torch.amax(d,dim=-1).refine_names(*d1.names[:-1])
+        # res = torch.nan_to_num(res.rename(None),nan=torch.finfo(res.dtype).max).rename(*res.names)
+        # print(f"{torch.isnan(res).sum()=}")
+        # print(res)
+        # res.sum().backward()
+        # d = d1.rename(None)
+        # torch.maximum(d,d2.rename(None),out=d)
+        return res#*outnames1[:-1])#*d1.names[:-1])#amaxnames(d1, dim=()
 
 
 # class QhullDistLowMem:
