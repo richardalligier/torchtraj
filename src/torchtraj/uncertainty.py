@@ -417,8 +417,26 @@ def scale_only_duration(dparams,scalez):
     dparams["duration"] = dparams["duration"].align_as(scalez)/scalez
 def scale_only_vspeed(dparams,scalez,iz):
     vxy = compute_vxy(v=dparams["v"],theta=dparams["theta"])
-    vxy[...,iz] = vxy[...,iz] * scalez
+    # print(scalez.shape,scalez.names)
+    # print(vxy.shape,vxy.names)
+    assert(0<=iz<=1)
+    assert(vxy.names[-1]==XY)
+    names = vxy.names
+    lv = [vxy[...,i] for i in range(vxy.shape[-1])]
+    lv[iz]=lv[iz]*scalez
+    vxy = torch.stack([v.rename(None) for v in lv],dim=-1).rename(*names)
+    # if iz == 0:
+    #     vxy = torch.stack([v.rename(None) for v in [vxy[...,0]*scalez,vxy[...,1]]],dim=-1).rename(*names)
+    # elif iz == 1:
+    #     vxy = torch.stack([v.rename(None) for v in [vxy[...,0],vxy[...,1]*scalez]],dim=-1).rename(*names)
+    # else:
+    #     raise Exception
+    # vxy[...,iz] = vxy[...,iz] * scalez <- if above replaces this one
+    # assert(torch.isnan(vxy).sum()==0)
+    # print(vxy[...,0],vxy[...,1])
     dparams["v"] = torch.hypot(vxy[...,0],vxy[...,1])
+    # print(dparams["v"])
+    # dparams["v"].sum().backward(retain_graph=True)
     dparams["theta"] = torch.atan2(vxy[...,1],vxy[...,0])
 
 

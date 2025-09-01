@@ -177,8 +177,8 @@ def nanamax(tensor, dim:tuple[str]):
     out = amax(out,dim)
     outnames = out.names
     out = out.rename(None)
-    mask = out==min_value
-    out = out.masked_fill(mask,torch.nan)#min_value)
+    # mask = out==min_value
+    # out = out.masked_fill(mask,torch.nan)#min_value)
     # mask = out!=min_value
     # out = out * (mask/mask)
     # out[out==min_value]= torch.nan
@@ -204,8 +204,8 @@ def nanamin(tensor, dim:tuple[str]):
     out = amin(out,dim)
     outnames = out.names
     out = out.rename(None)
-    mask = out==min_value
-    out = out.masked_fill(mask,torch.nan)#min_value)
+    # mask = out==min_value
+    # out = out.masked_fill(mask,torch.nan)#min_value)
     # mask = out!=min_value
     # out = out * (mask/mask)
     # out[out==min_value]= torch.nan

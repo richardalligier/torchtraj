@@ -351,10 +351,21 @@ class Flights:
         # print(xy0wpts.shape)
         # raise Exception
         dxy = xy0wpts[...,1:,:]-xy0wpts[...,:-1,:]
-        theta = torch.atan2(dxy[...,1],dxy[...,0])
+        eps=1e-1
+        theta = torch.atan2(dxy[...,1]+eps,dxy[...,0])
         # print(theta)
         # print(dxy[...,1].shape,meanv.shape)
-        duration = torch.hypot(dxy[...,1],dxy[...,0])/meanv#.expand(dxy.shape)
+        # assert(torch.isnan(dxy).sum()==0)
+        # assert(torch.isnan(meanv).sum()==0)
+        # assert(torch.min(meanv)>0)
+        hypot = torch.hypot(dxy[...,1]+eps,dxy[...,0])#-eps*0.5
+        # print(f"{hypot=}")
+        duration = hypot/meanv#.expand(dxy.shape)
+        # assert(duration.min()>=0.)
+        # print(f"{meanv=}")
+        # print(f"{duration=}")
+        # duration.sum().backward(retain_graph=True)
+        # print("done")
         # print(duration)
         return cls(xy0,v,theta,duration,turn_rate)
 

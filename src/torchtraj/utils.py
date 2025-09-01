@@ -27,7 +27,8 @@ def compute_vxy(v,theta):
 
 def apply_mask(res,mask):
     assert(mask.dtype!=torch.bool)
-    return res * mask.align_as(res)
+    # return res * mask.align_as(res)#.detach()
+    return res.masked_fill(mask=torch.isnan(mask).align_as(res),value=torch.nan)#.align_as(res).detach()
 
 
 def clone(o):
@@ -50,7 +51,23 @@ def to(o,device):
         return [to(v,device) for v in o]
     elif isinstance(o,tuple):
         return tuple(to(v,device) for v in o)
+    # elif isinstance(o,torch.nn.Module) or isinstance(o,torch.nn.ModuleList):
+    #     return o.to(device)
     elif isinstance(o,numbers.Number) or isinstance(o,bool) or isinstance(o,str) or o is None or isfunction(o) or ismethod(o):
         return o
     else:
         return o.to(device)
+
+def detach(o):
+    if isinstance(o,dict):
+        return {k:detach(v) for k,v in o.items()}
+    elif isinstance(o,list):
+        return [detach(v,device) for v in o]
+    elif isinstance(o,tuple):
+        return tuple(detach(v) for v in o)
+    # elif isinstance(o,torch.nn.Module) or isinstance(o,torch.nn.ModuleList):
+    #     return o.to(device)
+    elif isinstance(o,numbers.Number) or isinstance(o,bool) or isinstance(o,str) or o is None or isfunction(o) or ismethod(o):
+        return o
+    else:
+        return torch.detach(o)

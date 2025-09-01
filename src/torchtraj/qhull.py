@@ -14,8 +14,9 @@ def proj(phi):
 
 
 class QhullDist:
-    def __init__(self, projtheta):
+    def __init__(self, projtheta,):
         self.projtheta = projtheta
+        # self.n=projtheta.shape[0]
     @classmethod
     def from_device_n(cls, device="cpu", n = 180):
         projtheta = proj(torch.linspace(0, torch.pi, n,device=device))
@@ -36,6 +37,7 @@ class QhullDist:
         return self
     def dist(self, xy1, xy2, dimsInSet:tuple[str], capmem=None):
         torch.cuda.empty_cache()
+        # self.projtheta = proj(torch.linspace(0, torch.pi, self.n,device=self.projtheta.device))
         if capmem is None:
             return self.distone(xy1, xy2, dimsInSet)
         else:
@@ -101,12 +103,17 @@ class QhullDist:
         xy1 = xy1.refine_names(...,XY)
         # print(f"{torch.isnan(xy1).sum()=}")
         # print(f"{torch.isnan(xy2).sum()=}")
+        # xy1.sum().backward()
+        # print(f"{torch.isnan(xy1).sum()=}")
+        # print(f"{torch.isnan(xy2).sum()=}")
         p1 = self.projection(xy1)
         del xy1
 #        torch.cuda.empty_cache()
 #        xy1.sum().backward()
         p1low = named.nanamin(p1,dim=replaced1) if len(replaced1) > 0 else p1
         p1high = named.nanamax(p1,dim=replaced1) if len(replaced1) > 0 else p1
+        # print(f"{torch.isnan(p1low).sum()=}")
+        # print(f"{torch.isnan(p1high).sum()=}")
         # p1low.sum().backward()
         # p1high.sum().backward()
         del p1
@@ -132,7 +139,7 @@ class QhullDist:
         assert d1.names==d2.names
         d = torch.maximum(d1.rename(None),d2.rename(None))
         res = torch.amax(d,dim=-1).refine_names(*d1.names[:-1])
-        # res = torch.nan_to_num(res.rename(None),nan=torch.finfo(res.dtype).max).rename(*res.names)
+        # res = res.masked_fill(mask=torch.isnan(res),value=torch.finfo(res.dtype).max)
         # print(f"{torch.isnan(res).sum()=}")
         # print(res)
         # res.sum().backward()
@@ -173,8 +180,7 @@ class QhullDist:
 #         # print(d.shape)
 #         return torch.amax(d,dim=-1).refine_names(*d1.names[:-1])#amaxnames(d1, dim=()
 
-
-if __name__ == '__main__':
+def main():
     import matplotlib.pyplot as plt
     import time
     dims = [(40,"batch"),(2,"dt0"),(2,"dt1"),(2,"dangle"),(2,"dspeed"),(900,"t")]
@@ -211,3 +217,6 @@ if __name__ == '__main__':
     # plt.show()
 
 
+
+if __name__ == '__main__':
+    main()
