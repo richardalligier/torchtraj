@@ -351,7 +351,7 @@ class Flights:
         # print(xy0wpts.shape)
         # raise Exception
         dxy = xy0wpts[...,1:,:]-xy0wpts[...,:-1,:]
-        eps=1e-1
+        eps=1e-6
         theta = torch.atan2(dxy[...,1]+eps,dxy[...,0])
         # print(theta)
         # print(dxy[...,1].shape,meanv.shape)
